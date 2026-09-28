@@ -126,6 +126,8 @@ func runServer(args []string) error {
 	rateBurst := fs.Float64("rate-limit-burst", 0, "rate-limit burst size; defaults to -rate-limit when unset")
 	rateTrustFwd := fs.Bool("rate-limit-trust-forwarded", false,
 		"key rate limits by X-Forwarded-For (enable only behind a trusted proxy)")
+	logTLSAborts := fs.Bool("log-tls-handshake-aborts", false,
+		"log every TLS handshake the client abandons (e.g. TCP health checks); by default they are counted and summarized every 5m")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -288,6 +290,15 @@ func runServer(args []string) error {
 		forwarder.ServeLocally(handler, c.Active)
 	}
 
+	// TCP health checks against a TLS listener abort the handshake, and net/http
+	// logs each one. Hold those back (see handshakeAbortLog) unless asked not to.
+	var serverLog *log.Logger
+	var abortLog *handshakeAbortLog
+	if !*logTLSAborts {
+		abortLog = newHandshakeAbortLog(log.Writer())
+		serverLog = abortLog.Logger()
+	}
+
 	var clusterSrv *http.Server
 	if certs != nil {
 		ln, err := net.Listen("tcp", *haClusterListen)
@@ -298,6 +309,7 @@ func runServer(args []string) error {
 			Handler:           cluster.ServerHandler(handler, c.Active),
 			TLSConfig:         certs.ServerTLS(),
 			ReadHeaderTimeout: 10 * time.Second,
+			ErrorLog:          serverLog,
 		}
 		go func() {
 			if err := clusterSrv.ServeTLS(ln, "", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -311,6 +323,7 @@ func runServer(args []string) error {
 		Addr:              *listen,
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
+		ErrorLog:          serverLog,
 	}
 	if tlsEnabled {
 		// Request (but do not require) a client certificate, so the TLS
@@ -325,6 +338,10 @@ func runServer(args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if abortLog != nil {
+		go abortLog.Run(ctx, 5*time.Minute)
+	}
 
 	// Auto-unseal in the background, retrying until the seal and storage are
 	// reachable, so a brief KMS or database outage at startup does not leave the

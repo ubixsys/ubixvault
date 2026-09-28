@@ -115,6 +115,15 @@ ubixvault server -listen 0.0.0.0:8200 -tls-cert /etc/ubixvault/tls.crt -tls-key 
 `-dev-no-tls` overrides the check for trusted-network development only. Never use
 it in production.
 
+**Aborted handshakes are summarized, not logged one by one.** Load balancers and
+ingress controllers health-check backends by opening a TCP connection and closing
+it, which against a TLS port is an abandoned handshake. Instead of a log line per
+probe, the server logs a count every 5 minutes (`N aborted TLS handshakes in the
+last 5m0s`). Handshakes that fail for any other reason — a bad client
+certificate, an unsupported TLS version, plain HTTP sent to the TLS port — are
+still logged individually. `-log-tls-handshake-aborts` logs every abort again,
+for debugging a client that never completes a connection.
+
 ## 3. Unsealing
 
 The vault starts **sealed** and cannot serve secrets until unsealed. Choose one:

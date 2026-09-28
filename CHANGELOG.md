@@ -6,6 +6,17 @@ All notable changes to uBix Vault are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **Aborted TLS handshakes no longer flood the log.** Ingress controllers and
+  service meshes health-check backends with bare TCP connects; against a TLS
+  listener each one aborted the handshake and logged a line — one per probe, per
+  replica, which was 99.96% of the log on a real 3-replica cluster. Handshakes
+  (and HTTP/2 prefaces) the peer abandons by closing or resetting the connection
+  are now counted and summarized every 5 minutes. Every other handshake failure is
+  still logged as it happens. New flag `-log-tls-handshake-aborts` restores the
+  per-line output.
+
 ## [1.2.0] — 2026-09-24
 
 **High availability.** uBix Vault runs as several replicas over MySQL/MariaDB
