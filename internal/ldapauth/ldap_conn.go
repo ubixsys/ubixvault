@@ -1,8 +1,11 @@
 package ldapauth
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"net/url"
 	"strings"
@@ -99,9 +102,9 @@ func searchGroups(l *ldap.Conn, cfg *Config, userDN, username string) ([]string,
 
 // dial opens a connection to the directory, honoring ldaps:// and StartTLS.
 func dial(cfg *Config) (*ldap.Conn, error) {
-	tlsCfg := &tls.Config{InsecureSkipVerify: cfg.InsecureTLS} //nolint:gosec // G402: opt-in dev-only skip, documented as insecure_tls
-	if host := hostFromURL(cfg.URL); host != "" {
-		tlsCfg.ServerName = host
+	tlsCfg, err := tlsConfig(cfg)
+	if err != nil {
+		return nil, err
 	}
 	l, err := ldap.DialURL(cfg.URL, ldap.DialWithTLSConfig(tlsCfg))
 	if err != nil {
@@ -114,6 +117,52 @@ func dial(cfg *Config) (*ldap.Conn, error) {
 		}
 	}
 	return l, nil
+}
+
+// tlsConfig is the TLS configuration for talking to the directory: verified
+// against cfg.Certificate when set (and only against it), else the system roots,
+// unless insecure_tls turns verification off.
+func tlsConfig(cfg *Config) (*tls.Config, error) {
+	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: cfg.InsecureTLS} //nolint:gosec // G402: opt-in dev-only skip, documented as insecure_tls
+	if host := hostFromURL(cfg.URL); host != "" {
+		tlsCfg.ServerName = host
+	}
+	if cfg.Certificate != "" {
+		pool, err := certPool(cfg.Certificate)
+		if err != nil {
+			return nil, err
+		}
+		tlsCfg.RootCAs = pool
+	}
+	return tlsCfg, nil
+}
+
+// certPool parses a PEM bundle that must contain one or more certificates and
+// nothing else (a private key pasted by mistake is refused, not stored).
+func certPool(bundle string) (*x509.CertPool, error) {
+	pool := x509.NewCertPool()
+	rest := []byte(bundle)
+	n := 0
+	for {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		if block.Type != "CERTIFICATE" {
+			return nil, ErrInvalidCertificate
+		}
+		c, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return nil, ErrInvalidCertificate
+		}
+		pool.AddCert(c)
+		n++
+	}
+	if n == 0 || len(bytes.TrimSpace(rest)) != 0 {
+		return nil, ErrInvalidCertificate
+	}
+	return pool, nil
 }
 
 func hostFromURL(raw string) string {

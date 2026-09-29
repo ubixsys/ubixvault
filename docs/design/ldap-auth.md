@@ -105,6 +105,11 @@ risk) and **C is not** (credential-over-exec per login).
 - New `internal/ldapauth` method mirroring the other auth methods: `Configure`
   (URL, StartTLS/LDAPS, bind DN + password or anonymous, user search base +
   filter, group search base + filter), `WriteRole`/login by username+password.
+  TLS is verified against the system roots, or — for directories with their own
+  CA (FreeIPA's Dogtag, an AD enterprise CA) — against a PEM bundle in
+  `certificate` (Vault's field name), which then replaces the system roots for
+  that connection. `insecure_tls` turns verification off and cannot be combined
+  with `certificate`.
 - Login: dial with `crypto/tls` (or StartTLS), bind, search the user, optionally
   bind-as-user to verify the password, search groups, then
   `tokens.CreateWithTTLAndAlias(..., "ldap", username, groups)` — the asserted

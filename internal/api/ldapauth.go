@@ -12,6 +12,7 @@ type ldapConfigRequest struct {
 	URL          string `json:"url"`
 	StartTLS     bool   `json:"starttls"`
 	InsecureTLS  bool   `json:"insecure_tls"`
+	Certificate  string `json:"certificate"` // PEM CA bundle (Vault's field name)
 	BindDN       string `json:"bind_dn"`
 	BindPassword string `json:"bind_password"`
 	UserDN       string `json:"user_dn"`
@@ -43,6 +44,7 @@ func (h *Handler) ldapConfigure(w http.ResponseWriter, r *http.Request) {
 		URL:          req.URL,
 		StartTLS:     req.StartTLS,
 		InsecureTLS:  req.InsecureTLS,
+		Certificate:  req.Certificate,
 		BindDN:       req.BindDN,
 		BindPassword: req.BindPassword,
 		UserDN:       req.UserDN,
@@ -71,6 +73,7 @@ func (h *Handler) ldapReadConfig(w http.ResponseWriter, r *http.Request) {
 		"url":               cfg.URL,
 		"starttls":          cfg.StartTLS,
 		"insecure_tls":      cfg.InsecureTLS,
+		"certificate":       cfg.Certificate, // public CA material, returned as Vault does
 		"bind_dn":           cfg.BindDN,
 		"bind_password_set": bindPasswordSet, // never echo the secret
 		"user_dn":           cfg.UserDN,
@@ -142,7 +145,8 @@ func writeLDAPError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, "permission denied")
 	case errors.Is(err, ldapauth.ErrNotConfigured):
 		writeError(w, http.StatusBadRequest, err.Error())
-	case errors.Is(err, ldapauth.ErrInvalidName), errors.Is(err, ldapauth.ErrInvalidConfig):
+	case errors.Is(err, ldapauth.ErrInvalidName), errors.Is(err, ldapauth.ErrInvalidConfig),
+		errors.Is(err, ldapauth.ErrInvalidCertificate), errors.Is(err, ldapauth.ErrCertificateWithInsecureTLS):
 		writeError(w, http.StatusBadRequest, err.Error())
 	default:
 		writeInternal(w, err)

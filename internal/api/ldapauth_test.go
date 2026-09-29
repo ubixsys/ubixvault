@@ -2,8 +2,17 @@ package api
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/json"
+	"encoding/pem"
+	"math/big"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/cwolsen7905/ubixvault/internal/core"
 	"github.com/cwolsen7905/ubixvault/internal/ldapauth"
@@ -105,5 +114,54 @@ func TestLDAPConfigRequiresAuth(t *testing.T) {
 	h, _ := unsealedLDAPHandler(t, fakeLDAP{})
 	if rec := do(t, h, "POST", "/v1/auth/ldap/config", `{"url":"ldap://x","user_dn":"y"}`); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("config without token = %d, want 401", rec.Code)
+	}
+}
+
+// generatedCAPEM returns a freshly generated self-signed CA certificate (PEM).
+// Content is irrelevant beyond parsing; TLS behavior is tested in ldapauth.
+func generatedCAPEM(t *testing.T) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "LDAP test CA"},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
+		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+}
+
+func jsonString(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
+func TestLDAPConfigCertificate(t *testing.T) {
+	h, root := unsealedHandler(t)
+	ca := generatedCAPEM(t)
+	body := func(extra string) string {
+		return `{"url":"ldaps://ldap.test","user_dn":"cn=users,dc=test"` + extra + `}`
+	}
+	if rec := doAuth(t, h, "POST", "/v1/auth/ldap/config", body(`,"certificate":`+jsonString(ca)), root); rec.Code != http.StatusNoContent {
+		t.Fatalf("config with certificate = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	rec := doAuth(t, h, "GET", "/v1/auth/ldap/config", "", root)
+	if got := decode[map[string]any](t, rec)["data"].(map[string]any)["certificate"]; got != ca {
+		t.Fatalf("read back certificate = %v", got)
+	}
+	for name, extra := range map[string]string{
+		"private key":   `,"certificate":"-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n"`,
+		"not PEM":       `,"certificate":"hello"`,
+		"with insecure": `,"certificate":` + jsonString(ca) + `,"insecure_tls":true`,
+	} {
+		if rec := doAuth(t, h, "POST", "/v1/auth/ldap/config", body(extra), root); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: config = %d, want 400; body=%s", name, rec.Code, rec.Body.String())
+		}
 	}
 }

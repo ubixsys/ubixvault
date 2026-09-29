@@ -29,13 +29,25 @@ var (
 	ErrNotConfigured = errors.New("ldapauth: not configured")
 	ErrInvalidName   = errors.New("ldapauth: invalid group name")
 	ErrInvalidConfig = errors.New("ldapauth: config needs a url and user_dn")
+	// ErrInvalidCertificate is returned when certificate is not a PEM bundle of
+	// one or more CA certificates.
+	ErrInvalidCertificate = errors.New("ldapauth: certificate must be a PEM bundle of one or more CA certificates")
+	// ErrCertificateWithInsecureTLS is returned when both are set: with
+	// verification off the CA would never be consulted, which reads as secure
+	// and is not.
+	ErrCertificateWithInsecureTLS = errors.New("ldapauth: certificate has no effect with insecure_tls; drop insecure_tls to verify against it")
 )
 
 // Config holds the directory connection and search settings.
 type Config struct {
-	URL          string        `json:"url"`           // ldap://host:389 or ldaps://host:636
-	StartTLS     bool          `json:"starttls"`      // upgrade a plain connection to TLS
-	InsecureTLS  bool          `json:"insecure_tls"`  // skip certificate verification (dev only)
+	URL         string `json:"url"`          // ldap://host:389 or ldaps://host:636
+	StartTLS    bool   `json:"starttls"`     // upgrade a plain connection to TLS
+	InsecureTLS bool   `json:"insecure_tls"` // skip certificate verification (dev only)
+	// Certificate is a PEM bundle of the CA certificates that sign the
+	// directory's TLS certificate (e.g. FreeIPA's Dogtag CA, an AD enterprise
+	// CA). When set, only these CAs are trusted for this connection — the
+	// system roots are not consulted — as with Vault's LDAP "certificate".
+	Certificate  string        `json:"certificate,omitempty"`
 	BindDN       string        `json:"bind_dn"`       // service account used to search; empty = anonymous
 	BindPassword string        `json:"bind_password"` // service-account password
 	UserDN       string        `json:"user_dn"`       // base DN to search for users
@@ -91,6 +103,14 @@ func validName(name string) bool { return name != "" && !strings.Contains(name, 
 func (m *Method) Configure(ctx context.Context, cfg Config) error {
 	if cfg.URL == "" || cfg.UserDN == "" {
 		return ErrInvalidConfig
+	}
+	if cfg.Certificate != "" {
+		if cfg.InsecureTLS {
+			return ErrCertificateWithInsecureTLS
+		}
+		if _, err := certPool(cfg.Certificate); err != nil {
+			return err
+		}
 	}
 	blob, err := json.Marshal(cfg)
 	if err != nil {
