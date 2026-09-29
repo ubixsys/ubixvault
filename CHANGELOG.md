@@ -8,6 +8,12 @@ All notable changes to uBixVault are documented here. The format is based on
 
 ### Added
 
+- **Expired tokens are deleted in the background** (every 10 minutes, on the
+  active replica, up to 20,000 per pass), along with what each one owned — its
+  cubbyhole and its dynamic-database leases — as revoke-self does. Before, an
+  expired token was only removed if something looked it up, so a client that
+  logs in on every request left every token behind; a dev deployment had
+  accumulated 80,811 of them in five weeks, ~45 rows of real data among them.
 - **LDAP auth: `certificate`** on `auth/ldap/config` — a PEM bundle of the CA
   certificates that sign the directory's TLS certificate, as in Vault. Directories
   that issue their own certificates (FreeIPA's Dogtag CA, Active Directory
@@ -19,6 +25,11 @@ All notable changes to uBixVault are documented here. The format is based on
 
 ### Fixed
 
+- **Kubernetes auth ignored the role's `ttl`.** It was stored and shown on read
+  but not applied, so every login got the 32-day default. Logins now get the
+  role's `ttl` when set. If your clients log in per request or per process, set
+  a short `ttl` on their role (minutes): each login's token then stops being a
+  valid credential almost as soon as it is used.
 - **HashiCorp's own Vault clients now work.** Checked end to end with the
   official Go client (`github.com/hashicorp/vault/api`), which the `vault` CLI
   and External Secrets Operator are built on. It failed at the first call before

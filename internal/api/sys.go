@@ -370,6 +370,37 @@ func (h *Handler) RunLeaseSweeper(ctx context.Context, interval time.Duration) {
 	}
 }
 
+// tokenSweepBatch caps how many expired tokens one sweep deletes, so a large
+// backlog is worked off over several sweeps instead of in one long burst.
+const tokenSweepBatch = 20000
+
+// RunTokenSweeper deletes expired tokens every interval (on the active replica
+// only), destroying each one's cubbyhole and revoking its dynamic-database
+// leases first — what revoke-self does for a live token.
+func (h *Handler) RunTokenSweeper(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if h.core.Active() {
+				_, _ = h.sweepExpiredTokens(ctx)
+			}
+		}
+	}
+}
+
+func (h *Handler) sweepExpiredTokens(ctx context.Context) (int, error) {
+	return h.tokens.SweepExpired(ctx, tokenSweepBatch, func(ctx context.Context, id string) error {
+		if _, err := h.database.RevokeByToken(ctx, id); err != nil {
+			return err
+		}
+		return h.cubbyhole.Destroy(ctx, id)
+	})
+}
+
 // initRequest accepts every field of Vault's sys/init request, because Vault's
 // own client sends them all (zero-valued when unused). Fields uBixVault does not
 // implement are accepted only at their zero value — silently ignoring, say,

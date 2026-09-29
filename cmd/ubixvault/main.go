@@ -369,6 +369,9 @@ func runServer(args []string) error {
 	// Revoke expired dynamic-database leases in the background (active only).
 	go handler.RunLeaseSweeper(ctx, time.Minute)
 
+	// Delete expired tokens (active only), so logins do not accumulate forever.
+	go handler.RunTokenSweeper(ctx, 10*time.Minute)
+
 	// Periodically drop idle rate-limit buckets so memory stays bounded.
 	if limiter != nil {
 		go func() {

@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/cwolsen7905/ubixvault/internal/token"
 )
@@ -228,5 +230,35 @@ func TestRootCanStillIssueLongLivedTokens(t *testing.T) {
 	rec := doAuth(t, h, "POST", "/v1/auth/token/create", `{"policies":["ci-ro"],"ttl":"8760h"}`, root)
 	if ld := decode[map[string]any](t, rec)["auth"].(map[string]any)["lease_duration"].(float64); ld < 8759*3600 {
 		t.Fatalf("root-issued 8760h token lease_duration = %v s", ld)
+	}
+}
+
+// The sweeper removes expired tokens and what they owned (their cubbyhole),
+// and leaves live tokens alone.
+func TestSweepExpiredTokensDestroysCubbyhole(t *testing.T) {
+	h, root := unsealedHandler(t)
+	short := tokenWith(t, h, root, `{"policies":["p"],"ttl":"2s"}`)
+	live := tokenWith(t, h, root, `{"policies":["p"],"ttl":"1h"}`)
+	for _, tok := range []string{short, live} {
+		if rec := doAuth(t, h, "POST", "/v1/cubbyhole/note", `{"k":"v"}`, tok); rec.Code != http.StatusNoContent && rec.Code != http.StatusOK {
+			t.Fatalf("cubbyhole write = %d, body=%s", rec.Code, rec.Body.String())
+		}
+	}
+	time.Sleep(2100 * time.Millisecond)
+
+	n, err := h.(*Handler).sweepExpiredTokens(context.Background())
+	if err != nil || n != 1 {
+		t.Fatalf("sweep = %d, %v; want 1", n, err)
+	}
+	if rec := doAuth(t, h, "GET", "/v1/auth/token/lookup-self", "", live); rec.Code != http.StatusOK {
+		t.Fatalf("live token after sweep = %d", rec.Code)
+	}
+	// The expired token's cubbyhole is gone from storage, not just unreachable.
+	keys, err := h.(*Handler).core.Barrier().List(context.Background(), cubbyholeMountPrefix+"/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != 1 {
+		t.Fatalf("cubbyhole scopes after sweep = %v, want only the live token's", keys)
 	}
 }

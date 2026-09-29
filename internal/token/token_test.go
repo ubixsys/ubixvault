@@ -325,3 +325,56 @@ func TestCreateBoundedCannotOutliveBound(t *testing.T) {
 		t.Fatalf("short child expiry = %v, want %v", short.ExpiresAt, want)
 	}
 }
+
+func TestSweepExpired(t *testing.T) {
+	ctx := context.Background()
+	st, mem, now := clockedStore()
+
+	live, _ := st.CreateWithTTL(ctx, []string{"p"}, 2*time.Hour)
+	root, _ := st.CreateRoot(ctx)
+	var expired []*Token
+	for i := 0; i < 3; i++ {
+		tok, _ := st.CreateWithTTL(ctx, []string{"p"}, time.Hour)
+		expired = append(expired, tok)
+	}
+	*now = now.Add(90 * time.Minute) // the 1h tokens are past expiry; the 2h one is not
+
+	var cleaned []string
+	n, err := st.SweepExpired(ctx, 0, func(_ context.Context, id string) error {
+		cleaned = append(cleaned, id)
+		return nil
+	})
+	if err != nil || n != 3 || len(cleaned) != 3 {
+		t.Fatalf("SweepExpired = %d, %v; cleaned %d, want 3", n, err, len(cleaned))
+	}
+	for _, tok := range expired {
+		if e, _ := mem.Get(ctx, storeKey(tok.ID)); e != nil {
+			t.Errorf("expired token %s still stored", tok.ID[:8])
+		}
+	}
+	for _, tok := range []*Token{live, root} {
+		if _, err := st.Lookup(ctx, tok.ID); err != nil {
+			t.Errorf("unexpired token swept: %v", err)
+		}
+	}
+}
+
+func TestSweepExpiredLimitAndFailedCleanup(t *testing.T) {
+	ctx := context.Background()
+	st, _, now := clockedStore()
+	for i := 0; i < 5; i++ {
+		_, _ = st.CreateWithTTL(ctx, []string{"p"}, time.Minute)
+	}
+	*now = now.Add(time.Hour)
+
+	if n, _ := st.SweepExpired(ctx, 2, nil); n != 2 {
+		t.Fatalf("limited sweep removed %d, want 2", n)
+	}
+	// A failing cleanup keeps the record for the next sweep.
+	if n, _ := st.SweepExpired(ctx, 0, func(context.Context, string) error { return errors.New("sealed") }); n != 0 {
+		t.Fatalf("sweep with failing cleanup removed %d, want 0", n)
+	}
+	if n, _ := st.SweepExpired(ctx, 0, nil); n != 3 {
+		t.Fatalf("follow-up sweep removed %d, want the remaining 3", n)
+	}
+}

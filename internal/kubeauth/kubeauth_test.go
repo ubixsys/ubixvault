@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/cwolsen7905/ubixvault/internal/storage"
 	"github.com/cwolsen7905/ubixvault/internal/token"
@@ -244,5 +245,38 @@ func TestParseServiceAccount(t *testing.T) {
 		if ns != want[0] || sa != want[1] || gotOK != want[2] {
 			t.Errorf("parseServiceAccount(%q) = (%q,%q,%v)", in, ns, sa, ok)
 		}
+	}
+}
+
+// The role's ttl bounds the issued token (it used to be stored but ignored, so
+// every login got the 32-day default).
+func TestLoginAppliesRoleTTL(t *testing.T) {
+	ctx := context.Background()
+	rev := &mockReviewer{result: &ReviewResult{Authenticated: true, Namespace: "team-a", ServiceAccount: "app-sa"}}
+	m := configuredMethod(t, rev)
+	for name, ttl := range map[string]time.Duration{"short": 10 * time.Minute, "default": 0} {
+		if err := m.WriteRole(ctx, name, Role{
+			BoundServiceAccountNamespaces: []string{"team-a"},
+			BoundServiceAccountNames:      []string{"app-sa"},
+			Policies:                      []string{"app-ro"},
+			TTL:                           ttl,
+		}); err != nil {
+			t.Fatalf("WriteRole %s: %v", name, err)
+		}
+	}
+
+	short, err := m.Login(ctx, "short", "a.jwt.token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if left := time.Until(short.ExpiresAt); left > 10*time.Minute || left < 9*time.Minute {
+		t.Fatalf("role ttl 10m: token expires in %v", left)
+	}
+	def, err := m.Login(ctx, "default", "a.jwt.token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if left := time.Until(def.ExpiresAt); left < token.DefaultTTL-time.Minute {
+		t.Fatalf("no role ttl: token expires in %v, want the default %v", left, token.DefaultTTL)
 	}
 }

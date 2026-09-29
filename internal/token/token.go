@@ -84,6 +84,7 @@ type Storage interface {
 	Get(ctx context.Context, key string) (*storage.Entry, error)
 	Put(ctx context.Context, entry *storage.Entry) error
 	Delete(ctx context.Context, key string) error
+	List(ctx context.Context, prefix string) ([]string, error)
 }
 
 // Aliaser resolves an auth-method login to an identity entity, creating one on
@@ -295,6 +296,57 @@ func (st *Store) Renew(ctx context.Context, id string, ttl time.Duration) (*Toke
 		return nil, err
 	}
 	return t, nil
+}
+
+// SweepExpired deletes up to limit expired token records (limit <= 0 means no
+// limit) and returns how many it removed. For each, cleanup is called with the
+// token's ID first — to destroy what the token owned (its cubbyhole, its
+// dynamic-database leases), as revoke-self does — and a token whose cleanup
+// fails is left in place to be retried on the next sweep.
+//
+// Without this an expired token is only deleted when something happens to look
+// it up, so a client that logs in on every request leaves every token behind:
+// storage grows without bound, one row per login.
+func (st *Store) SweepExpired(ctx context.Context, limit int, cleanup func(ctx context.Context, id string) error) (int, error) {
+	names, err := st.store.List(ctx, storePrefix)
+	if err != nil {
+		return 0, fmt.Errorf("token: list: %w", err)
+	}
+	now := st.now()
+	removed := 0
+	for _, name := range names {
+		if limit > 0 && removed >= limit {
+			break
+		}
+		if err := ctx.Err(); err != nil {
+			return removed, err
+		}
+		key := storePrefix + name
+		entry, err := st.store.Get(ctx, key)
+		if err != nil {
+			return removed, fmt.Errorf("token: read: %w", err)
+		}
+		if entry == nil {
+			continue // revoked meanwhile
+		}
+		var t Token
+		if err := json.Unmarshal(entry.Value, &t); err != nil {
+			continue // not ours to judge; leave it
+		}
+		if !t.expired(now) {
+			continue
+		}
+		if cleanup != nil {
+			if err := cleanup(ctx, t.ID); err != nil {
+				continue // retried next sweep
+			}
+		}
+		if err := st.store.Delete(ctx, key); err != nil {
+			return removed, fmt.Errorf("token: delete: %w", err)
+		}
+		removed++
+	}
+	return removed, nil
 }
 
 func (st *Store) save(ctx context.Context, t *Token) error {
