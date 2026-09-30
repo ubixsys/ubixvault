@@ -378,3 +378,32 @@ func TestSweepExpiredLimitAndFailedCleanup(t *testing.T) {
 		t.Fatalf("follow-up sweep removed %d, want the remaining 3", n)
 	}
 }
+
+// A role's maxTTL lowers the token's ceiling: expiry and renewal stop there.
+func TestCreateForLoginRoleMaxTTL(t *testing.T) {
+	ctx := context.Background()
+	st, _, now := clockedStore()
+
+	tok, err := st.CreateForLogin(ctx, []string{"p"}, 2*time.Hour, time.Hour, "userpass", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := now.Add(time.Hour); !tok.ExpiresAt.Equal(want) || !tok.MaxExpiresAt.Equal(want) {
+		t.Fatalf("ExpiresAt=%v MaxExpiresAt=%v, want both at the role max %v", tok.ExpiresAt, tok.MaxExpiresAt, want)
+	}
+	renewed, _ := st.Renew(ctx, tok.ID, 87600*time.Hour)
+	if renewed.ExpiresAt.After(now.Add(time.Hour)) {
+		t.Fatalf("renewed past the role max: %v", renewed.ExpiresAt)
+	}
+
+	// Without a role max, the usual ceiling (own TTL vs system maximum) applies.
+	plain, _ := st.CreateForLogin(ctx, []string{"p"}, time.Hour, 0, "userpass", "", nil)
+	if want := now.Add(DefaultMaxTTL); !plain.MaxExpiresAt.Equal(want) {
+		t.Fatalf("no role max: MaxExpiresAt=%v, want %v", plain.MaxExpiresAt, want)
+	}
+	// ttl <= 0 means the default TTL, still under the role max.
+	def, _ := st.CreateForLogin(ctx, []string{"p"}, 0, 30*time.Minute, "userpass", "", nil)
+	if want := now.Add(30 * time.Minute); !def.ExpiresAt.Equal(want) {
+		t.Fatalf("default ttl under a 30m max: ExpiresAt=%v, want %v", def.ExpiresAt, want)
+	}
+}

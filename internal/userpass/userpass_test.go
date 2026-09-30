@@ -21,7 +21,7 @@ func TestLoginFlow(t *testing.T) {
 	ctx := context.Background()
 	m := newMethod(t)
 
-	if err := m.WriteUser(ctx, "alice", "correct horse", []string{"readers"}, time.Hour); err != nil {
+	if err := m.WriteUser(ctx, "alice", "correct horse", []string{"readers"}, time.Hour, 0); err != nil {
 		t.Fatalf("WriteUser: %v", err)
 	}
 	tok, err := m.Login(ctx, "alice", "correct horse")
@@ -48,7 +48,7 @@ func TestReadUserHidesSecret(t *testing.T) {
 	ctx := context.Background()
 	m := newMethod(t)
 	const pw = "distinctive-Passw0rd-9f3a2b"
-	_ = m.WriteUser(ctx, "bob", pw, []string{"p"}, 0)
+	_ = m.WriteUser(ctx, "bob", pw, []string{"p"}, 0, 0)
 	info, err := m.ReadUser(ctx, "bob")
 	if err != nil {
 		t.Fatalf("ReadUser: %v", err)
@@ -66,13 +66,13 @@ func TestReadUserHidesSecret(t *testing.T) {
 func TestWriteUserValidation(t *testing.T) {
 	ctx := context.Background()
 	m := newMethod(t)
-	if err := m.WriteUser(ctx, "x", "", []string{"p"}, 0); !errors.Is(err, ErrInvalidConfig) {
+	if err := m.WriteUser(ctx, "x", "", []string{"p"}, 0, 0); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("empty password: want ErrInvalidConfig, got %v", err)
 	}
-	if err := m.WriteUser(ctx, "x", "pw", nil, 0); !errors.Is(err, ErrInvalidConfig) {
+	if err := m.WriteUser(ctx, "x", "pw", nil, 0, 0); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("no policies: want ErrInvalidConfig, got %v", err)
 	}
-	if err := m.WriteUser(ctx, "bad/name", "pw", []string{"p"}, 0); !errors.Is(err, ErrInvalidName) {
+	if err := m.WriteUser(ctx, "bad/name", "pw", []string{"p"}, 0, 0); !errors.Is(err, ErrInvalidName) {
 		t.Fatalf("bad name: want ErrInvalidName, got %v", err)
 	}
 }
@@ -80,8 +80,8 @@ func TestWriteUserValidation(t *testing.T) {
 func TestPasswordUpdate(t *testing.T) {
 	ctx := context.Background()
 	m := newMethod(t)
-	_ = m.WriteUser(ctx, "carol", "old", []string{"p"}, 0)
-	_ = m.WriteUser(ctx, "carol", "new", []string{"p"}, 0) // rotate
+	_ = m.WriteUser(ctx, "carol", "old", []string{"p"}, 0, 0)
+	_ = m.WriteUser(ctx, "carol", "new", []string{"p"}, 0, 0) // rotate
 	if _, err := m.Login(ctx, "carol", "old"); !errors.Is(err, ErrDenied) {
 		t.Fatalf("old password should no longer work, got %v", err)
 	}

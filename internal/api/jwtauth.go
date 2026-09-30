@@ -21,6 +21,7 @@ type jwtRoleRequest struct {
 	BoundClaims    map[string]string `json:"bound_claims"`
 	Policies       []string          `json:"policies"`
 	TokenTTL       vaultDuration     `json:"token_ttl"`
+	TokenMaxTTL    vaultDuration     `json:"token_max_ttl"`
 }
 
 type jwtLoginRequest struct {
@@ -56,11 +57,16 @@ func (h *Handler) jwtWriteRole(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	maxTTL, ok := parseMaxTTL(w, req.TokenMaxTTL, ttl)
+	if !ok {
+		return
+	}
 	err := h.jwtauth.WriteRole(r.Context(), r.PathValue("name"), jwtauth.Role{
 		BoundAudiences: req.BoundAudiences,
 		BoundClaims:    req.BoundClaims,
 		Policies:       req.Policies,
 		TokenTTL:       ttl,
+		TokenMaxTTL:    maxTTL,
 	})
 	if err != nil {
 		writeJWTError(w, err)
@@ -80,6 +86,7 @@ func (h *Handler) jwtReadRole(w http.ResponseWriter, r *http.Request) {
 		"bound_claims":    role.BoundClaims,
 		"policies":        role.Policies,
 		"token_ttl":       role.TokenTTL.String(),
+		"token_max_ttl":   role.TokenMaxTTL.String(),
 	})
 }
 

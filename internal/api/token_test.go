@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -260,5 +261,41 @@ func TestSweepExpiredTokensDestroysCubbyhole(t *testing.T) {
 	}
 	if len(keys) != 1 {
 		t.Fatalf("cubbyhole scopes after sweep = %v, want only the live token's", keys)
+	}
+}
+
+// A userpass user's token_max_ttl bounds the tokens it logs in with: a 10-year
+// renewal stops at the role's ceiling. The value round-trips on read.
+func TestRoleTokenMaxTTLBoundsLoginTokens(t *testing.T) {
+	h, root := unsealedHandler(t)
+	if rec := doAuth(t, h, "POST", "/v1/auth/userpass/users/ci", `{"password":"pw-ci-test","policies":["p"],"token_ttl":"30m","token_max_ttl":"1h"}`, root); rec.Code != http.StatusNoContent {
+		t.Fatalf("write user = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	rec := doAuth(t, h, "GET", "/v1/auth/userpass/users/ci", "", root)
+	if got := decode[map[string]any](t, rec)["data"].(map[string]any)["token_max_ttl"]; got != "1h0m0s" {
+		t.Fatalf("read token_max_ttl = %v, want 1h0m0s", got)
+	}
+	login := doAuth(t, h, "POST", "/v1/auth/userpass/login/ci", `{"password":"pw-ci-test"}`, "")
+	tok := decode[map[string]any](t, login)["auth"].(map[string]any)["client_token"].(string)
+	renew := doAuth(t, h, "POST", "/v1/auth/token/renew-self", `{"increment":"87600h"}`, tok)
+	if ld := decode[map[string]any](t, renew)["auth"].(map[string]any)["lease_duration"].(float64); ld > 3600 {
+		t.Fatalf("renewed lease_duration = %v s, want at most the role's 1h", ld)
+	}
+}
+
+// token_ttl above token_max_ttl is refused, on every auth method that takes them.
+func TestRoleTokenTTLAboveMaxIsRefused(t *testing.T) {
+	h, root := unsealedHandler(t)
+	for path, body := range map[string]string{
+		"/v1/auth/userpass/users/u":  `{"password":"pw","policies":["p"],"token_ttl":"2h","token_max_ttl":"1h"}`,
+		"/v1/auth/approle/role/r":    `{"policies":["p"],"token_ttl":"2h","token_max_ttl":"1h"}`,
+		"/v1/auth/kubernetes/role/k": `{"bound_service_account_names":["a"],"bound_service_account_namespaces":["n"],"policies":["p"],"ttl":"2h","token_max_ttl":"1h"}`,
+		"/v1/auth/cert/certs/c":      `{"policies":["p"],"certificate":"x","token_ttl":"2h","token_max_ttl":"1h"}`,
+		"/v1/auth/jwt/role/j":        `{"policies":["p"],"bound_audiences":["a"],"token_ttl":"2h","token_max_ttl":"1h"}`,
+	} {
+		rec := doAuth(t, h, "POST", path, body, root)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "token_max_ttl") {
+			t.Errorf("%s: %d %s, want 400 about token_max_ttl", path, rec.Code, rec.Body.String())
+		}
 	}
 }

@@ -13,6 +13,7 @@ type certRoleRequest struct {
 	Policies           []string      `json:"policies"`
 	AllowedCommonNames []string      `json:"allowed_common_names"`
 	TokenTTL           vaultDuration `json:"token_ttl"`
+	TokenMaxTTL        vaultDuration `json:"token_max_ttl"`
 }
 
 func (h *Handler) certWriteCert(w http.ResponseWriter, r *http.Request) {
@@ -24,11 +25,16 @@ func (h *Handler) certWriteCert(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	maxTTL, ok := parseMaxTTL(w, req.TokenMaxTTL, ttl)
+	if !ok {
+		return
+	}
 	err := h.certauth.WriteCert(r.Context(), r.PathValue("name"), certauth.CertRole{
 		Certificate:        req.Certificate,
 		Policies:           req.Policies,
 		AllowedCommonNames: req.AllowedCommonNames,
 		TokenTTL:           ttl,
+		TokenMaxTTL:        maxTTL,
 	})
 	if err != nil {
 		writeCertError(w, err)
@@ -48,6 +54,7 @@ func (h *Handler) certReadCert(w http.ResponseWriter, r *http.Request) {
 		"policies":             role.Policies,
 		"allowed_common_names": role.AllowedCommonNames,
 		"token_ttl":            role.TokenTTL.String(),
+		"token_max_ttl":        role.TokenMaxTTL.String(),
 	})
 }
 

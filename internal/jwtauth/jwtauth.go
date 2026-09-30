@@ -50,6 +50,7 @@ type Role struct {
 	BoundClaims    map[string]string `json:"bound_claims"` // claim -> required value
 	Policies       []string          `json:"policies"`
 	TokenTTL       time.Duration     `json:"token_ttl"`
+	TokenMaxTTL    time.Duration     `json:"token_max_ttl"`
 }
 
 // Storage is the subset of a backend the method needs.
@@ -218,9 +219,9 @@ func (m *Method) Login(ctx context.Context, roleName, rawJWT string) (*token.Tok
 	subject, _ := claims["sub"].(string) // the JWT subject is the identity alias name
 	groups := extractGroups(claims, cfg.GroupsClaim)
 	if role.TokenTTL > 0 {
-		return m.tokens.CreateWithTTLAndAlias(ctx, role.Policies, role.TokenTTL, "jwt", subject, groups)
+		return m.tokens.CreateForLogin(ctx, role.Policies, role.TokenTTL, role.TokenMaxTTL, "jwt", subject, groups)
 	}
-	return m.tokens.CreateWithAlias(ctx, role.Policies, "jwt", subject, groups)
+	return m.tokens.CreateForLogin(ctx, role.Policies, 0, role.TokenMaxTTL, "jwt", subject, groups)
 }
 
 // extractGroups reads the group-name list from the named claim. It accepts a

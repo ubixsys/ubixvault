@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"strconv"
+	"time"
 )
 
 // vaultDuration is a request field holding a duration, accepted in every form
@@ -53,4 +55,19 @@ func secondsIfBare(s string) string {
 		}
 	}
 	return s + "s"
+}
+
+// parseMaxTTL parses an auth role's token_max_ttl (optional) and refuses a
+// token_ttl larger than it: silently clamping would hand out shorter tokens
+// than the role says, and a max below the ttl is almost certainly a typo.
+func parseMaxTTL(w http.ResponseWriter, raw vaultDuration, ttl time.Duration) (time.Duration, bool) {
+	maxTTL, ok := parseOptionalDuration(w, string(raw), "token_max_ttl")
+	if !ok {
+		return 0, false
+	}
+	if maxTTL > 0 && ttl > maxTTL {
+		writeError(w, http.StatusBadRequest, "token_ttl must not exceed token_max_ttl")
+		return 0, false
+	}
+	return maxTTL, true
 }

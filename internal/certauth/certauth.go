@@ -38,6 +38,7 @@ type CertRole struct {
 	Policies           []string      `json:"policies"`
 	AllowedCommonNames []string      `json:"allowed_common_names"` // empty = any CN accepted
 	TokenTTL           time.Duration `json:"token_ttl"`
+	TokenMaxTTL        time.Duration `json:"token_max_ttl"`
 }
 
 // Storage is the subset of a backend the method needs.
@@ -161,9 +162,9 @@ func (m *Method) Login(ctx context.Context, presented []*x509.Certificate) (*tok
 		}
 		cn := leaf.Subject.CommonName // the certificate CN is the identity alias name
 		if role.TokenTTL > 0 {
-			return m.tokens.CreateWithTTLAndAlias(ctx, role.Policies, role.TokenTTL, "cert", cn, nil)
+			return m.tokens.CreateForLogin(ctx, role.Policies, role.TokenTTL, role.TokenMaxTTL, "cert", cn, nil)
 		}
-		return m.tokens.CreateWithAlias(ctx, role.Policies, "cert", cn, nil)
+		return m.tokens.CreateForLogin(ctx, role.Policies, 0, role.TokenMaxTTL, "cert", cn, nil)
 	}
 	return nil, ErrDenied
 }

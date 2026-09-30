@@ -9,9 +9,10 @@ import (
 )
 
 type userpassUserRequest struct {
-	Password string        `json:"password"`
-	Policies []string      `json:"policies"`
-	TokenTTL vaultDuration `json:"token_ttl"`
+	Password    string        `json:"password"`
+	Policies    []string      `json:"policies"`
+	TokenTTL    vaultDuration `json:"token_ttl"`
+	TokenMaxTTL vaultDuration `json:"token_max_ttl"`
 }
 
 type userpassLoginRequest struct {
@@ -27,7 +28,11 @@ func (h *Handler) userpassWriteUser(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := h.userpass.WriteUser(r.Context(), r.PathValue("username"), req.Password, req.Policies, ttl); err != nil {
+	maxTTL, ok := parseMaxTTL(w, req.TokenMaxTTL, ttl)
+	if !ok {
+		return
+	}
+	if err := h.userpass.WriteUser(r.Context(), r.PathValue("username"), req.Password, req.Policies, ttl, maxTTL); err != nil {
 		writeUserpassError(w, err)
 		return
 	}
@@ -40,7 +45,7 @@ func (h *Handler) userpassReadUser(w http.ResponseWriter, r *http.Request) {
 		writeUserpassError(w, err)
 		return
 	}
-	writeData(w, map[string]any{"policies": info.Policies, "token_ttl": info.TokenTTL.String()})
+	writeData(w, map[string]any{"policies": info.Policies, "token_ttl": info.TokenTTL.String(), "token_max_ttl": info.TokenMaxTTL.String()})
 }
 
 func (h *Handler) userpassListUsers(w http.ResponseWriter, r *http.Request) {

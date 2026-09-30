@@ -20,6 +20,7 @@ type k8sRoleRequest struct {
 	BoundServiceAccountNamespaces []string      `json:"bound_service_account_namespaces"`
 	Policies                      []string      `json:"policies"`
 	TTL                           vaultDuration `json:"ttl"`
+	TokenMaxTTL                   vaultDuration `json:"token_max_ttl"`
 }
 
 type k8sLoginRequest struct {
@@ -58,11 +59,16 @@ func (h *Handler) k8sWriteRole(w http.ResponseWriter, r *http.Request) {
 		}
 		ttl = d
 	}
+	maxTTL, ok := parseMaxTTL(w, req.TokenMaxTTL, ttl)
+	if !ok {
+		return
+	}
 	role := kubeauth.Role{
 		BoundServiceAccountNames:      req.BoundServiceAccountNames,
 		BoundServiceAccountNamespaces: req.BoundServiceAccountNamespaces,
 		Policies:                      req.Policies,
 		TTL:                           ttl,
+		TokenMaxTTL:                   maxTTL,
 	}
 	if err := h.kubernetes.WriteRole(r.Context(), r.PathValue("name"), role); err != nil {
 		writeKubeError(w, err)
@@ -82,6 +88,7 @@ func (h *Handler) k8sReadRole(w http.ResponseWriter, r *http.Request) {
 		"bound_service_account_namespaces": role.BoundServiceAccountNamespaces,
 		"policies":                         role.Policies,
 		"ttl":                              role.TTL.String(),
+		"token_max_ttl":                    role.TokenMaxTTL.String(),
 	})
 }
 

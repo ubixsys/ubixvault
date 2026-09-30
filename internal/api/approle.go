@@ -12,6 +12,7 @@ import (
 type approleRoleRequest struct {
 	Policies    []string      `json:"policies"`
 	TokenTTL    vaultDuration `json:"token_ttl"`
+	TokenMaxTTL vaultDuration `json:"token_max_ttl"`
 	SecretIDTTL vaultDuration `json:"secret_id_ttl"`
 }
 
@@ -33,7 +34,11 @@ func (h *Handler) approleWriteRole(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	role := approle.Role{Policies: req.Policies, TokenTTL: tokenTTL, SecretIDTTL: secretTTL}
+	maxTTL, ok := parseMaxTTL(w, req.TokenMaxTTL, tokenTTL)
+	if !ok {
+		return
+	}
+	role := approle.Role{Policies: req.Policies, TokenTTL: tokenTTL, TokenMaxTTL: maxTTL, SecretIDTTL: secretTTL}
 	if err := h.approle.WriteRole(r.Context(), r.PathValue("name"), role); err != nil {
 		writeAppRoleError(w, err)
 		return
@@ -50,6 +55,7 @@ func (h *Handler) approleReadRole(w http.ResponseWriter, r *http.Request) {
 	writeData(w, map[string]any{
 		"policies":      role.Policies,
 		"token_ttl":     role.TokenTTL.String(),
+		"token_max_ttl": role.TokenMaxTTL.String(),
 		"secret_id_ttl": role.SecretIDTTL.String(),
 	})
 }

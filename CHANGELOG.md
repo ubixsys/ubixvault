@@ -6,6 +6,15 @@ All notable changes to uBixVault are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **Per-role `token_max_ttl`** on every auth method (userpass users, AppRole,
+  TLS cert, JWT/OIDC and Kubernetes roles, and the LDAP config), as in Vault. It
+  lowers the ceiling of the tokens that role issues: their expiry and any renewal
+  stop at login + `token_max_ttl`. It never raises the ceiling above the system
+  maximum. A `token_ttl` larger than `token_max_ttl` is refused with a `400`.
+  Returned on read.
+
 ## [1.4.0] — 2026-09-29
 
 **Works with HashiCorp's own clients.** The `vault` CLI, External Secrets

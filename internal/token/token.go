@@ -199,6 +199,39 @@ func (st *Store) CreateWithTTLAndAlias(ctx context.Context, policies []string, t
 	return st.createAlias(ctx, policies, expiresAt, mountType, name, groups)
 }
 
+// CreateForLogin is what the auth methods call at login: a token bound to the
+// identity entity (mountType, name) resolves to, lasting ttl (the default TTL
+// when ttl <= 0). A role's maxTTL (> 0) lowers the token's ceiling to now+maxTTL:
+// its expiry and any renewal stop there. It never raises the ceiling — the
+// system maximum still applies (see [Store.MaxExpiry]).
+func (st *Store) CreateForLogin(ctx context.Context, policies []string, ttl, maxTTL time.Duration, mountType, name string, groups []string) (*Token, error) {
+	if ttl <= 0 {
+		ttl = DefaultTTL
+	}
+	var bound time.Time
+	if maxTTL > 0 {
+		bound = st.now().Add(maxTTL)
+	}
+	entityID, err := st.resolveEntity(ctx, mountType, name, groups)
+	if err != nil {
+		return nil, err
+	}
+	return st.createWithEntityBounded(ctx, policies, st.now().Add(ttl), entityID, bound)
+}
+
+// resolveEntity returns the identity entity for a login, or "" without an
+// aliaser or a name.
+func (st *Store) resolveEntity(ctx context.Context, mountType, name string, groups []string) (string, error) {
+	if st.aliaser == nil || name == "" {
+		return "", nil
+	}
+	id, err := st.aliaser.ResolveAlias(ctx, mountType, name, groups)
+	if err != nil {
+		return "", fmt.Errorf("token: resolve identity: %w", err)
+	}
+	return id, nil
+}
+
 // createAlias resolves the alias to an entity (if an aliaser is installed and a
 // name is supplied) and mints a token bound to it.
 func (st *Store) createAlias(ctx context.Context, policies []string, expiresAt time.Time, mountType, name string, groups []string) (*Token, error) {

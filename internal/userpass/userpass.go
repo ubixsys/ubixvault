@@ -54,12 +54,14 @@ type stored struct {
 	Hash       []byte        `json:"hash"`
 	Policies   []string      `json:"policies"`
 	TokenTTL   time.Duration `json:"token_ttl"`
+	MaxTTL     time.Duration `json:"token_max_ttl"`
 }
 
 // UserInfo is the non-secret view of a user.
 type UserInfo struct {
-	Policies []string
-	TokenTTL time.Duration
+	Policies    []string
+	TokenTTL    time.Duration
+	TokenMaxTTL time.Duration
 }
 
 // Method is the userpass auth method.
@@ -83,7 +85,7 @@ func derive(password string, salt []byte, iter int) ([]byte, error) {
 }
 
 // WriteUser creates or replaces a user with the given password and policies.
-func (m *Method) WriteUser(ctx context.Context, username, password string, policies []string, ttl time.Duration) error {
+func (m *Method) WriteUser(ctx context.Context, username, password string, policies []string, ttl, maxTTL time.Duration) error {
 	if !validName(username) {
 		return ErrInvalidName
 	}
@@ -98,7 +100,7 @@ func (m *Method) WriteUser(ctx context.Context, username, password string, polic
 	if err != nil {
 		return fmt.Errorf("userpass: hash password: %w", err)
 	}
-	blob, err := json.Marshal(stored{Salt: salt, Iterations: iterations, Hash: hash, Policies: policies, TokenTTL: ttl})
+	blob, err := json.Marshal(stored{Salt: salt, Iterations: iterations, Hash: hash, Policies: policies, TokenTTL: ttl, MaxTTL: maxTTL})
 	if err != nil {
 		return fmt.Errorf("userpass: marshal user: %w", err)
 	}
@@ -114,7 +116,7 @@ func (m *Method) ReadUser(ctx context.Context, username string) (*UserInfo, erro
 	if err != nil {
 		return nil, err
 	}
-	return &UserInfo{Policies: u.Policies, TokenTTL: u.TokenTTL}, nil
+	return &UserInfo{Policies: u.Policies, TokenTTL: u.TokenTTL, TokenMaxTTL: u.MaxTTL}, nil
 }
 
 // ListUsers returns the usernames.
@@ -158,9 +160,9 @@ func (m *Method) Login(ctx context.Context, username, password string) (*token.T
 		return nil, ErrDenied
 	}
 	if u.TokenTTL > 0 {
-		return m.tokens.CreateWithTTLAndAlias(ctx, u.Policies, u.TokenTTL, "userpass", username, nil)
+		return m.tokens.CreateForLogin(ctx, u.Policies, u.TokenTTL, u.MaxTTL, "userpass", username, nil)
 	}
-	return m.tokens.CreateWithAlias(ctx, u.Policies, "userpass", username, nil)
+	return m.tokens.CreateForLogin(ctx, u.Policies, 0, u.MaxTTL, "userpass", username, nil)
 }
 
 func (m *Method) load(ctx context.Context, username string) (*stored, error) {

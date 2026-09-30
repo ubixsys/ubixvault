@@ -21,6 +21,7 @@ type ldapConfigRequest struct {
 	GroupAttr    string        `json:"group_attr"`
 	GroupFilter  string        `json:"group_filter"`
 	TokenTTL     vaultDuration `json:"token_ttl"`
+	TokenMaxTTL  vaultDuration `json:"token_max_ttl"`
 }
 
 type ldapGroupRequest struct {
@@ -40,6 +41,10 @@ func (h *Handler) ldapConfigure(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	maxTTL, ok := parseMaxTTL(w, req.TokenMaxTTL, ttl)
+	if !ok {
+		return
+	}
 	err := h.ldap.Configure(r.Context(), ldapauth.Config{
 		URL:          req.URL,
 		StartTLS:     req.StartTLS,
@@ -53,6 +58,7 @@ func (h *Handler) ldapConfigure(w http.ResponseWriter, r *http.Request) {
 		GroupAttr:    req.GroupAttr,
 		GroupFilter:  req.GroupFilter,
 		TokenTTL:     ttl,
+		TokenMaxTTL:  maxTTL,
 	})
 	if err != nil {
 		writeLDAPError(w, err)
@@ -82,6 +88,7 @@ func (h *Handler) ldapReadConfig(w http.ResponseWriter, r *http.Request) {
 		"group_attr":        cfg.GroupAttr,
 		"group_filter":      cfg.GroupFilter,
 		"token_ttl":         cfg.TokenTTL.String(),
+		"token_max_ttl":     cfg.TokenMaxTTL.String(),
 	})
 }
 

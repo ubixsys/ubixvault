@@ -45,6 +45,7 @@ type Role struct {
 	BoundServiceAccountNamespaces []string      `json:"bound_service_account_namespaces"`
 	Policies                      []string      `json:"policies"`
 	TTL                           time.Duration `json:"ttl"`
+	TokenMaxTTL                   time.Duration `json:"token_max_ttl"`
 }
 
 // ReviewResult is the outcome of validating a ServiceAccount token.
@@ -231,12 +232,7 @@ func (m *Method) Login(ctx context.Context, roleName, jwt string) (*token.Token,
 	subject := result.Namespace + "/" + result.ServiceAccount
 	// The role's ttl bounds the token, as with the other auth methods (it was
 	// stored and shown but not applied, so every login got the default TTL).
-	var tok *token.Token
-	if role.TTL > 0 {
-		tok, err = m.tokens.CreateWithTTLAndAlias(ctx, role.Policies, role.TTL, "kubernetes", subject, nil)
-	} else {
-		tok, err = m.tokens.CreateWithAlias(ctx, role.Policies, "kubernetes", subject, nil)
-	}
+	tok, err := m.tokens.CreateForLogin(ctx, role.Policies, role.TTL, role.TokenMaxTTL, "kubernetes", subject, nil)
 	if err != nil {
 		return nil, fmt.Errorf("kubeauth: issue token: %w", err)
 	}

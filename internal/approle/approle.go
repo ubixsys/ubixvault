@@ -38,6 +38,7 @@ var (
 type Role struct {
 	Policies    []string      `json:"policies"`
 	TokenTTL    time.Duration `json:"token_ttl"`     // 0 uses the token store's default
+	TokenMaxTTL time.Duration `json:"token_max_ttl"` // 0 = the system maximum; lowers the token's ceiling
 	SecretIDTTL time.Duration `json:"secret_id_ttl"` // 0 means secret_ids do not expire
 }
 
@@ -242,7 +243,7 @@ func (m *Method) Login(ctx context.Context, roleID, secretID string) (*token.Tok
 	}
 
 	if role.TokenTTL > 0 {
-		return m.tokens.CreateWithTTLAndAlias(ctx, role.Policies, role.TokenTTL, "approle", name, nil)
+		return m.tokens.CreateForLogin(ctx, role.Policies, role.TokenTTL, role.TokenMaxTTL, "approle", name, nil)
 	}
-	return m.tokens.CreateWithAlias(ctx, role.Policies, "approle", name, nil)
+	return m.tokens.CreateForLogin(ctx, role.Policies, 0, role.TokenMaxTTL, "approle", name, nil)
 }

@@ -56,6 +56,7 @@ type Config struct {
 	GroupAttr    string        `json:"group_attr"`    // attribute holding the group name (default "cn")
 	GroupFilter  string        `json:"group_filter"`  // group search filter; {{.UserDN}}/{{.Username}} substituted (default "(member={{.UserDN}})")
 	TokenTTL     time.Duration `json:"token_ttl"`     // 0 = default TTL
+	TokenMaxTTL  time.Duration `json:"token_max_ttl"` // 0 = the system maximum; lowers the token's ceiling
 }
 
 // Connector performs the actual LDAP conversation: bind as the service account,
@@ -226,7 +227,7 @@ func (m *Method) Login(ctx context.Context, username, password string) (*token.T
 	sort.Strings(policies)
 
 	if cfg.TokenTTL > 0 {
-		return m.tokens.CreateWithTTLAndAlias(ctx, policies, cfg.TokenTTL, "ldap", username, groups)
+		return m.tokens.CreateForLogin(ctx, policies, cfg.TokenTTL, cfg.TokenMaxTTL, "ldap", username, groups)
 	}
-	return m.tokens.CreateWithAlias(ctx, policies, "ldap", username, groups)
+	return m.tokens.CreateForLogin(ctx, policies, 0, cfg.TokenMaxTTL, "ldap", username, groups)
 }
