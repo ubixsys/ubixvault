@@ -195,8 +195,10 @@ public-boundary:
         exit 1
       fi
       out="$(mktemp)"
-      grep -rniE --exclude-dir=.git -- "$PUBLIC_BOUNDARY_PATTERN" . > "$out" 2>/dev/null
-      rc=$?
+      # GitLab runs this under `set -eo pipefail`; `|| rc=$?` keeps grep's exit 1 (no match,
+      # the clean case) from aborting the job before the status is read.
+      rc=0
+      grep -rniE --exclude-dir=.git -- "$PUBLIC_BOUNDARY_PATTERN" . > "$out" 2>/dev/null || rc=$?
       if [ "$rc" -gt 1 ]; then
         echo "grep failed with exit $rc; refusing to pass unchecked."
         rm -f "$out"
