@@ -180,6 +180,27 @@ console-e2e:
     expire_in: 1 week
     paths: [console-e2e-out/screenshots, console-e2e-out/server.log]
 
+# The repo is public and mirrored, so nothing private may be committed. The pattern of
+# private names lives in the PUBLIC_BOUNDARY_PATTERN CI variable (project settings, not the
+# repo, so the list itself is not published). The job prints file and line only, never the
+# matched text.
+public-boundary:
+  stage: test
+  tags: [shell]
+  script:
+    - |
+      if [ -z "${PUBLIC_BOUNDARY_PATTERN:-}" ]; then
+        echo "PUBLIC_BOUNDARY_PATTERN is not set in CI/CD variables; refusing to pass unchecked."
+        exit 1
+      fi
+      hits=$(grep -rniE --exclude-dir=.git -- "$PUBLIC_BOUNDARY_PATTERN" . | cut -d: -f1,2 || true)
+      if [ -n "$hits" ]; then
+        echo "Private names found (file:line):"
+        echo "$hits"
+        exit 1
+      fi
+      echo "Public boundary clean."
+
 # The sign-off job from the include above. It runs in an alpine image (curl, jq), so it goes
 # to the instance's k8s runner, which takes tagged jobs only and honours each job's image;
 # the shell runner would ignore the image. Reads approvals with the group's
