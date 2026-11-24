@@ -183,7 +183,8 @@ console-e2e:
 # The repo is public and mirrored, so nothing private may be committed. The pattern of
 # private names lives in the PUBLIC_BOUNDARY_PATTERN CI variable (project settings, not the
 # repo, so the list itself is not published). The job prints file and line only, never the
-# matched text.
+# matched text, and fails closed on any grep error; grep's stderr is discarded so a
+# malformed pattern cannot be echoed into the log.
 public-boundary:
   stage: test
   tags: [shell]
@@ -193,12 +194,21 @@ public-boundary:
         echo "PUBLIC_BOUNDARY_PATTERN is not set in CI/CD variables; refusing to pass unchecked."
         exit 1
       fi
-      hits=$(grep -rniE --exclude-dir=.git -- "$PUBLIC_BOUNDARY_PATTERN" . | cut -d: -f1,2 || true)
-      if [ -n "$hits" ]; then
-        echo "Private names found (file:line):"
-        echo "$hits"
+      out="$(mktemp)"
+      grep -rniE --exclude-dir=.git -- "$PUBLIC_BOUNDARY_PATTERN" . > "$out" 2>/dev/null
+      rc=$?
+      if [ "$rc" -gt 1 ]; then
+        echo "grep failed with exit $rc; refusing to pass unchecked."
+        rm -f "$out"
         exit 1
       fi
+      if [ "$rc" -eq 0 ]; then
+        echo "Private names found (file:line):"
+        cut -d: -f1,2 "$out"
+        rm -f "$out"
+        exit 1
+      fi
+      rm -f "$out"
       echo "Public boundary clean."
 
 # The sign-off job from the include above. It runs in an alpine image (curl, jq), so it goes
