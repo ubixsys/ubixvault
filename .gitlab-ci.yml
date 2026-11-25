@@ -183,13 +183,18 @@ console-e2e:
 # The repo is public and mirrored, so nothing private may be committed. The pattern of
 # private names lives in the PUBLIC_BOUNDARY_PATTERN CI variable (project settings, not the
 # repo, so the list itself is not published). It scans the tracked files of the commit
-# (`git grep`), not artifacts or caches the job happens to have in its workspace. It prints
-# file and line only, never the matched text, and fails closed on any grep error (exit > 1;
-# git grep exits 128); grep's stderr is discarded so a malformed pattern cannot be echoed
-# into the log.
+# (`git grep`), not artifacts or caches the job happens to have in its workspace. In a merge
+# request pipeline it also scans the MR's own commits, base..head: lines added or removed in
+# each diff (`git log -G`, so a name added and then removed within the MR is caught) and the
+# commit messages. Older history is out of scope. It prints file:line or a commit sha only,
+# never the matched text, and fails closed on any git error (exit 128: a bad pattern, or a
+# base commit it cannot read); stderr is discarded so a malformed pattern cannot be echoed
+# into the log. Full clone (GIT_DEPTH 0) so the MR's base is always present.
 public-boundary:
   stage: test
   tags: [shell]
+  variables:
+    GIT_DEPTH: "0"
   script:
     - |
       if [ -z "${PUBLIC_BOUNDARY_PATTERN:-}" ]; then
@@ -197,23 +202,50 @@ public-boundary:
         exit 1
       fi
       out="$(mktemp)"
-      # GitLab runs this under `set -eo pipefail`; `|| rc=$?` keeps grep's exit 1 (no match,
-      # the clean case) from aborting the job before the status is read.
+      trap 'rm -f "$out"' EXIT
+      found=0
+      # GitLab runs this under `set -eo pipefail`; `|| rc=$?` keeps git grep's exit 1 (no
+      # match, the clean case) from aborting the job before the status is read.
       rc=0
       git grep -niE -e "$PUBLIC_BOUNDARY_PATTERN" > "$out" 2>/dev/null || rc=$?
       if [ "$rc" -gt 1 ]; then
-        echo "grep failed with exit $rc; refusing to pass unchecked."
-        rm -f "$out"
+        echo "git grep failed with exit $rc; refusing to pass unchecked."
         exit 1
       fi
       if [ "$rc" -eq 0 ]; then
-        echo "Private names found (file:line):"
+        echo "Private names found in tracked files (file:line):"
         cut -d: -f1,2 "$out"
-        rm -f "$out"
+        found=1
+      fi
+      base="${CI_MERGE_REQUEST_DIFF_BASE_SHA:-}"
+      if [ -n "$base" ]; then
+        # git log exits 0 whether or not anything matched; a hit is any sha printed.
+        for kind in diff message; do
+          case "$kind" in
+            diff)    flag=-G ;;
+            message) flag=--grep ;;
+          esac
+          rc=0
+          git log -i -E "$flag" "$PUBLIC_BOUNDARY_PATTERN" --format=%h "$base..HEAD" > "$out" 2>/dev/null || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "git log ($kind) failed with exit $rc over $base..HEAD; refusing to pass unchecked."
+            exit 1
+          fi
+          if [ -s "$out" ]; then
+            echo "Private names found in this merge request's commit ${kind}s (commit):"
+            cat "$out"
+            found=1
+          fi
+        done
+      fi
+      if [ "$found" -ne 0 ]; then
         exit 1
       fi
-      rm -f "$out"
-      echo "Public boundary clean."
+      if [ -n "$base" ]; then
+        echo "Public boundary clean: tracked files and the merge request's commits."
+      else
+        echo "Public boundary clean: tracked files."
+      fi
 
 # The sign-off job from the include above. It runs in an alpine image (curl, jq), so it goes
 # to the instance's k8s runner, which takes tagged jobs only and honours each job's image;
