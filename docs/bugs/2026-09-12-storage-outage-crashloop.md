@@ -1,6 +1,6 @@
 # BUG: uBixVault crash-loops when MySQL storage has a brief outage
 
-**Found:** 2026-09-12, in production on the BrainChurts k3s cluster
+**Found:** 2026-09-12, in production on a k3s cluster
 **Affects:** `0.2.0-beta.10` (deployed); code paths unchanged through `v1.0.0-rc.2`
 **Severity:** availability — a secrets manager should survive its database blinking
 **Wanted in:** `v1.0.0`, since `rc.1` and `rc.2` are already cut
