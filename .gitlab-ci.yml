@@ -184,9 +184,9 @@ console-e2e:
 # private names lives in the PUBLIC_BOUNDARY_PATTERN CI variable (project settings, not the
 # repo, so the list itself is not published). It scans the tracked files of the commit
 # (`git grep`), not artifacts or caches the job happens to have in its workspace. In a merge
-# request pipeline it also scans the MR's own commits, base..head: lines added or removed in
-# each diff (`git log -G`, so a name added and then removed within the MR is caught) and the
-# commit messages. Older history is out of scope. It prints file:line or a commit sha only,
+# request pipeline it also scans the MR's own commits, base..head: the lines each commit adds
+# (so a name added and then removed within the MR is caught; removing one is the fix and
+# passes) and the commit messages. Older history is out of scope. It prints file:line or a commit sha only,
 # never the matched text, and fails closed on any git error (exit 128: a bad pattern, or a
 # base commit it cannot read); stderr is discarded so a malformed pattern cannot be echoed
 # into the log. Full clone (GIT_DEPTH 0) so the MR's base is always present.
@@ -201,8 +201,8 @@ public-boundary:
         echo "PUBLIC_BOUNDARY_PATTERN is not set in CI/CD variables; refusing to pass unchecked."
         exit 1
       fi
-      out="$(mktemp)"
-      trap 'rm -f "$out"' EXIT
+      out="$(mktemp)"; patch="$(mktemp)"; added="$(mktemp)"
+      trap 'rm -f "$out" "$patch" "$added"' EXIT
       found=0
       # GitLab runs this under `set -eo pipefail`; `|| rc=$?` keeps git grep's exit 1 (no
       # match, the clean case) from aborting the job before the status is read.
@@ -219,24 +219,50 @@ public-boundary:
       fi
       base="${CI_MERGE_REQUEST_DIFF_BASE_SHA:-}"
       if [ -n "$base" ]; then
-        # git log exits 0 whether or not anything matched; a hit is any sha printed.
-        for kind in diff message; do
-          case "$kind" in
-            diff)    flag=-G ;;
-            message) flag=--grep ;;
-          esac
+        rc=0
+        commits="$(git rev-list "$base..HEAD" 2>/dev/null)" || rc=$?
+        if [ "$rc" -ne 0 ]; then
+          echo "git rev-list failed with exit $rc over $base..HEAD; refusing to pass unchecked."
+          exit 1
+        fi
+        : > "$out"
+        for c in $commits; do
           rc=0
-          git log -i -E "$flag" "$PUBLIC_BOUNDARY_PATTERN" --format=%h "$base..HEAD" > "$out" 2>/dev/null || rc=$?
+          git show --format= --no-color --no-ext-diff "$c" > "$patch" 2>/dev/null || rc=$?
           if [ "$rc" -ne 0 ]; then
-            echo "git log ($kind) failed with exit $rc over $base..HEAD; refusing to pass unchecked."
+            echo "git show failed with exit $rc on commit $c; refusing to pass unchecked."
             exit 1
           fi
-          if [ -s "$out" ]; then
-            echo "Private names found in this merge request's commit ${kind}s (commit):"
-            cat "$out"
-            found=1
+          # Added lines only (`+`, not the `+++` file header). Files, not a pipe into grep -q,
+          # so an early match cannot SIGPIPE an upstream command under pipefail.
+          { grep '^+' "$patch" || true; } | { grep -v '^+++' || true; } > "$added"
+          rc=0
+          grep -qiE -e "$PUBLIC_BOUNDARY_PATTERN" "$added" 2>/dev/null || rc=$?
+          if [ "$rc" -gt 1 ]; then
+            echo "grep failed with exit $rc on commit $c; refusing to pass unchecked."
+            exit 1
+          fi
+          if [ "$rc" -eq 0 ]; then
+            git rev-parse --short "$c" >> "$out"
           fi
         done
+        if [ -s "$out" ]; then
+          echo "Private names added by this merge request's commits (commit):"
+          cat "$out"
+          found=1
+        fi
+        # git log exits 0 whether or not a message matched; a hit is any sha printed.
+        rc=0
+        git log -i -E --grep "$PUBLIC_BOUNDARY_PATTERN" --format=%h "$base..HEAD" > "$out" 2>/dev/null || rc=$?
+        if [ "$rc" -ne 0 ]; then
+          echo "git log failed with exit $rc over $base..HEAD; refusing to pass unchecked."
+          exit 1
+        fi
+        if [ -s "$out" ]; then
+          echo "Private names found in this merge request's commit messages (commit):"
+          cat "$out"
+          found=1
+        fi
       fi
       if [ "$found" -ne 0 ]; then
         exit 1
