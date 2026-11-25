@@ -33,8 +33,9 @@ ha:
 terminationGracePeriodSeconds: 30
 
 image:
-  # No official image is published yet; point this at wherever you build/push
-  # the Dockerfile at the repo root. The tag defaults to the chart's appVersion.
+  # The published multi-arch image (linux/amd64 + linux/arm64), built by CI on
+  # every v* tag. Point it at your own registry only for a build of your own.
+  # The tag defaults to the chart's appVersion.
   repository: ghcr.io/ubixsys/ubixvault
   tag: ""            # defaults to .Chart.AppVersion when empty
   pullPolicy: IfNotPresent
