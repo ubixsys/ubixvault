@@ -261,17 +261,30 @@ WantedBy=multi-user.target
 
 ### Docker
 
+The image runs as uid 65532 and does not create its data directory, so a new
+Docker volume starts out owned by root and the server cannot write to it. Give
+the volume to that user once, before the first start:
+
 ```sh
+docker volume create ubixvault-data
+docker run --rm -v ubixvault-data:/data busybox chown 65532:65532 /data
+
 docker run -d --name ubixvault \
   -p 8200:8200 \
-  -v ubixvault-data:/data \
+  -v ubixvault-data:/var/lib/ubixvault \
   -v /etc/ubixvault:/tls:ro \
-  ubixvault server -listen 0.0.0.0:8200 -data /data \
-    -tls-cert /tls/tls.crt -tls-key /tls/tls.key
+  ghcr.io/ubixsys/ubixvault:1.7.0 server -listen 0.0.0.0:8200 \
+    -data /var/lib/ubixvault -tls-cert /tls/tls.crt -tls-key /tls/tls.key
 ```
 
-Provide the auto-unseal KEK via `-e UBIXVAULT_AUTO_UNSEAL_KEY=...` (ideally from a
-Docker/Kubernetes secret, not a plain env var in your compose file).
+The TLS files must be readable by uid 65532 too. With a host directory instead
+of a named volume, `chown 65532:65532` it the same way. (On Kubernetes the Helm
+chart's pod `fsGroup` does this for you.)
+
+Image tags are the release version without the `v` (`1.7.0`); `edge` and
+`sha-<commit>` tags track unreleased builds from `main`. Provide the auto-unseal
+KEK via `-e UBIXVAULT_AUTO_UNSEAL_KEY=...` (ideally from a Docker/Kubernetes
+secret, not a plain env var in your compose file).
 
 ### Kubernetes (Helm)
 
@@ -279,8 +292,10 @@ A single-node Helm chart lives in [`deploy/charts/ubixvault`](../deploy/charts/u
 It deploys a StatefulSet with a persistent data volume, auto-unseal by default,
 split TCP-liveness / HTTP-readiness probes (a sealed vault returns `503`, so an
 httpGet liveness probe would crash-loop it), and the `system:auth-delegator`
-binding the Kubernetes auth method needs. Build and push the image from the
-repo-root `Dockerfile` first (no official image is published yet), then:
+binding the Kubernetes auth method needs. It runs the published image
+`ghcr.io/ubixsys/ubixvault` at the chart's `appVersion` (multi-arch, built by CI
+on every release tag); set `image.repository` only for an image you build
+yourself from the repo-root `Dockerfile`.
 
 ```sh
 kubectl create ns ubixvault
@@ -288,7 +303,6 @@ kubectl -n ubixvault create secret generic ubixvault-kek \
   --from-literal=auto-unseal-key="$(head -c32 /dev/urandom | xxd -p | tr -d '\n')"
 
 helm install vault ./deploy/charts/ubixvault -n ubixvault \
-  --set image.repository=<your-registry>/ubixvault \
   --set tls.existingSecret=ubixvault-tls \
   --set autoUnseal.existingSecret=ubixvault-kek
 ```
