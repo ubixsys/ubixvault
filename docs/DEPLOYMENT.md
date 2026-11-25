@@ -270,8 +270,10 @@ docker run -d --name ubixvault \
     -tls-cert /tls/tls.crt -tls-key /tls/tls.key
 ```
 
-Image tags are the release version without the `v` (`1.7.0`); `edge` and`sha-<commit>` tags track unreleased builds. Provide the auto-unseal KEK via `-e UBIXVAULT_AUTO_UNSEAL_KEY=...` (ideally from a
-Docker/Kubernetes secret, not a plain env var in your compose file).
+Image tags are the release version without the `v` (`1.7.0`); `edge` and
+`sha-<commit>` tags track unreleased builds from `main`. Provide the auto-unseal
+KEK via `-e UBIXVAULT_AUTO_UNSEAL_KEY=...` (ideally from a Docker/Kubernetes
+secret, not a plain env var in your compose file).
 
 ### Kubernetes (Helm)
 
