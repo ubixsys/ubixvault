@@ -182,9 +182,11 @@ console-e2e:
 
 # The repo is public and mirrored, so nothing private may be committed. The pattern of
 # private names lives in the PUBLIC_BOUNDARY_PATTERN CI variable (project settings, not the
-# repo, so the list itself is not published). The job prints file and line only, never the
-# matched text, and fails closed on any grep error; grep's stderr is discarded so a
-# malformed pattern cannot be echoed into the log.
+# repo, so the list itself is not published). It scans the tracked files of the commit
+# (`git grep`), not artifacts or caches the job happens to have in its workspace. It prints
+# file and line only, never the matched text, and fails closed on any grep error (exit > 1;
+# git grep exits 128); grep's stderr is discarded so a malformed pattern cannot be echoed
+# into the log.
 public-boundary:
   stage: test
   tags: [shell]
@@ -198,7 +200,7 @@ public-boundary:
       # GitLab runs this under `set -eo pipefail`; `|| rc=$?` keeps grep's exit 1 (no match,
       # the clean case) from aborting the job before the status is read.
       rc=0
-      grep -rniE --exclude-dir=.git -- "$PUBLIC_BOUNDARY_PATTERN" . > "$out" 2>/dev/null || rc=$?
+      git grep -niE -e "$PUBLIC_BOUNDARY_PATTERN" > "$out" 2>/dev/null || rc=$?
       if [ "$rc" -gt 1 ]; then
         echo "grep failed with exit $rc; refusing to pass unchecked."
         rm -f "$out"
