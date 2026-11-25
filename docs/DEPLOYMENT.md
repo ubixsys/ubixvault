@@ -261,14 +261,25 @@ WantedBy=multi-user.target
 
 ### Docker
 
+The image runs as uid 65532 and does not create its data directory, so a new
+Docker volume starts out owned by root and the server cannot write to it. Give
+the volume to that user once, before the first start:
+
 ```sh
+docker volume create ubixvault-data
+docker run --rm -v ubixvault-data:/data busybox chown 65532:65532 /data
+
 docker run -d --name ubixvault \
   -p 8200:8200 \
-  -v ubixvault-data:/data \
+  -v ubixvault-data:/var/lib/ubixvault \
   -v /etc/ubixvault:/tls:ro \
-  ghcr.io/ubixsys/ubixvault:1.7.0 server -listen 0.0.0.0:8200 -data /data \
-    -tls-cert /tls/tls.crt -tls-key /tls/tls.key
+  ghcr.io/ubixsys/ubixvault:1.7.0 server -listen 0.0.0.0:8200 \
+    -data /var/lib/ubixvault -tls-cert /tls/tls.crt -tls-key /tls/tls.key
 ```
+
+The TLS files must be readable by uid 65532 too. With a host directory instead
+of a named volume, `chown 65532:65532` it the same way. (On Kubernetes the Helm
+chart's pod `fsGroup` does this for you.)
 
 Image tags are the release version without the `v` (`1.7.0`); `edge` and
 `sha-<commit>` tags track unreleased builds from `main`. Provide the auto-unseal
