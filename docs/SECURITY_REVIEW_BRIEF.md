@@ -258,4 +258,5 @@ funding or a scoped paid engagement** — happy to right-size scope to fit.
 
 - **Vulnerabilities:** GitHub Security tab → *Report a vulnerability*
   ([repo](https://github.com/cwolsen7905/ubixvault)).
-- **Scoping / engagement:** `cwolsen@brainchurts.com`.
+- **Scoping / engagement:** open a private security advisory on the GitHub repo
+  (same *Report a vulnerability* flow).
