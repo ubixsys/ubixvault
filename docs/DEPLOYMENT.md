@@ -373,12 +373,17 @@ of secret material, so it is safe to scrape; restrict it at the network layer as
 you would any `/metrics`. The Helm chart can create a Prometheus Operator
 `ServiceMonitor` (`metrics.serviceMonitor.enabled=true`).
 
-**Web console.** A console is served at `/ui/` (`/` redirects there). It shows
-the vault's seal state and lets an operator, with a token they supply in the
-browser, manage KV v2 secrets (read/list/edit, version history, soft-delete /
-undelete / destroy), ACL policies (list/read/write/delete), and mint scoped
-tokens. The assets are static and embedded in the binary; the token is held only
-in the browser tab, and every write goes through the audited `/v1` API.
+**Web console.** A console is served at `/ui/` (`/` redirects there). Until the
+vault is initialized and unsealed it offers only those steps. After sign-in
+(userpass, LDAP or a token) it shows a dashboard of seal, cluster and storage
+state and of each engine and auth method with the token's capabilities on it,
+and lets an operator browse and edit KV v2 secrets (values hidden until
+revealed; version history with soft-delete / undelete / destroy), manage ACL
+policies and check what a token may do on a path, mint scoped tokens, and run
+the PKI CA. Pages have their own addresses (`/ui/#/kv/app/config`). The assets
+are static and embedded in the binary under a strict Content-Security-Policy;
+the token is held only in the browser tab, and every write goes through the
+audited `/v1` API.
 
 ## 6. Backups
 

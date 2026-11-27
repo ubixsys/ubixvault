@@ -6,6 +6,28 @@ All notable changes to uBixVault are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+
+- **The web console is reorganised into an application.** A sidebar
+  (Dashboard; Secrets: Key/value, PKI; Access: Tokens, Policies), a page per
+  task with breadcrumbs, and addresses that survive a reload (`/ui/#/kv/app/config`).
+  While the vault is uninitialized or sealed only Initialize and Unseal show;
+  while signed out only Sign in shows.
+- **Dashboard:** seal state, seal type, version and uptime; high availability
+  and the active node; Raft peers and leader when on Raft; the signed-in token;
+  and every secrets engine and auth method with the capabilities the token has
+  on it (from `sys/capabilities-self`).
+- **Key/value browser:** folder-by-folder listing, values hidden until revealed
+  (one by one or all), copy buttons, a JSON view that also hides values until
+  revealed, and the version history as a table (view, delete, undelete,
+  destroy). Destroying a version asks you to type `destroy`. Revealed values
+  are dropped as soon as you leave the page.
+- **Policies:** a list, a page per policy, an editor, and a "check a path"
+  box that shows what your token may do there.
+- Loading, empty, error and "not allowed" states on every page, a light theme
+  that follows the system (with a switch), and a menu for narrow screens. The
+  console still loads nothing from outside the vault and has no dependencies.
+
 ## [1.7.0] — 2026-11-12
 
 > Delegated administration you can trust: an operator can be allowed to manage
