@@ -384,7 +384,15 @@ async function refreshSession() {
     signedOutMessage("Your session has expired or was revoked. Sign in again.", "error");
     return;
   }
-  if (!r.ok) return; // sealed or unreachable: keep the token; the lifecycle page shows why
+  if (!r.ok) {
+    // Sealed: the lifecycle page shows why. Anything else (a 500, a dropped
+    // connection): keep the token, and say why the sign-in form is showing.
+    if (r.status !== 503) {
+      signedOutMessage("Could not check your saved session: " + friendlyError(r.status, r.body) +
+        " Reload to try again, or sign in.", "error");
+    }
+    return;
+  }
   session = (r.body && r.body.data) || {};
   const source = sessionStorage.getItem(SOURCE_KEY) || "token";
   const user = sessionStorage.getItem(USER_KEY);
@@ -520,10 +528,30 @@ function markNav(page) {
   }
 }
 
+// gen counts renders. A loader notes it before awaiting and drops its result
+// if the user has moved on, so a slow response never overwrites another page.
+let gen = 0;
+const stale = (g) => g !== gen;
+
+// clearPage drops what a page left on screen, so revealed secrets, a token
+// shown once or a private key do not stay in the hidden DOM after leaving it.
+function clearPage(name) {
+  const outs = {
+    kv: ["kv-out"], policies: ["pol-out", "cap-out"], tokens: ["tok-out"],
+    pki: ["pki-ca-out", "pki-role-out", "pki-issue-out"], dashboard: ["dash-engines"],
+  }[name] || [];
+  for (const id of outs) $(id).replaceChildren();
+  if (name === "kv") closeEditor();
+  if (name === "policies") closePolEditor();
+}
+
 let lastMode = "";
+let lastPage = "";
 function render() {
+  gen++;
   const m = mode();
   $("app").dataset.mode = m;
+  if (m !== "shell" && lastPage) { clearPage(lastPage); lastPage = ""; }
   if (m === "lifecycle") { showPage("lifecycle"); lastMode = m; return; }
   if (m === "signin") {
     showPage("signin");
@@ -533,6 +561,8 @@ function render() {
   }
   lastMode = m;
   const route = parseRoute();
+  if (lastPage && lastPage !== route.page) clearPage(lastPage);
+  lastPage = route.page;
   showPage(route.page);
   markNav(route.page);
   $("app").classList.remove("nav-open");
@@ -574,6 +604,7 @@ function capTags(caps) {
 }
 
 async function loadDashboard() {
+  const g = gen;
   kvRows($("dash-vault"), [
     ["state", vault.sealed ? "sealed" : "unsealed"],
     ["seal type", vault.type || "—"],
@@ -583,6 +614,7 @@ async function loadDashboard() {
 
   const cluster = [];
   const leader = await api("GET", "/v1/sys/leader");
+  if (stale(g)) return;
   if (leader.ok && leader.body) {
     const l = leader.body;
     cluster.push(["high availability", l.ha_enabled ? "enabled" : "off (single node)"]);
@@ -594,6 +626,7 @@ async function loadDashboard() {
     cluster.push(["high availability", leader.status === 403 ? "not visible to this token" : "unknown"]);
   }
   const raft = await api("GET", "/v1/sys/storage/raft/configuration");
+  if (stale(g)) return;
   if (raft.ok) {
     const servers = (raft.body && raft.body.data && raft.body.data.config && raft.body.data.config.servers) || [];
     const lead = servers.find((s) => s.leader);
@@ -610,6 +643,7 @@ async function loadDashboard() {
   const out = $("dash-engines");
   pageState(out, "loading", "Checking your token's capabilities…");
   const r = await api("POST", "/v1/sys/capabilities-self", { paths: ENGINES.map((e) => e.probe) });
+  if (stale(g)) return;
   const caps = (r.ok && r.body && r.body.data) || null;
   if (!caps) { errorState(out, r, "sys/capabilities-self"); return; }
   const wrap = el("div", "table-wrap");
@@ -679,10 +713,12 @@ function goKv(p) {
 }
 
 async function kvFolder(p) {
+  const g = gen;
   $("kv-title").textContent = p ? p : "Key/value";
   const out = $("kv-out");
   pageState(out, "loading", "Loading " + (p || "secret/") + "…");
   const r = await api("LIST", KV_META(p));
+  if (stale(g)) return;
   const createBtn = () => actionButton("Create secret", "", () => openEditor(p, null));
   if (r.status === 404 || (r.ok && !((r.body && r.body.data && r.body.data.keys) || []).length)) {
     pageState(out, "empty", p ? "Nothing under " + p + "." : "No secrets yet.", [createBtn()]);
@@ -722,15 +758,18 @@ async function kvFolder(p) {
 // version history. Revealed values live only in this view's closure, so they
 // are gone as soon as the page changes.
 async function kvSecret(p, version) {
+  const g = gen;
   $("kv-title").textContent = p;
   const out = $("kv-out");
   pageState(out, "loading", "Loading " + p + "…");
   const r = await api("GET", KV_DATA(p) + (version ? "?version=" + version : ""));
+  if (stale(g)) return;
   if (!r.ok) {
     if (r.status === 404) {
       // A soft-deleted current version is 404 on data but the metadata still
       // describes it, so fall back to metadata to show the deleted state.
       const meta = await api("GET", KV_META(p));
+      if (stale(g)) return;
       if (meta.ok) { renderDeleted(p, meta.body, version); return; }
       if (meta.status === 403) {
         // Without metadata access, missing and deleted look the same here.
@@ -848,8 +887,10 @@ function jsonView(body, data) {
 }
 
 async function versionsView(body, p) {
+  const g = gen;
   pageState(body, "loading", "Loading versions…");
   const r = await api("GET", KV_META(p));
+  if (stale(g) || !body.isConnected) return;
   if (!r.ok) { errorState(body, r, "secret/metadata/" + p); return; }
   const md = (r.body && r.body.data) || {};
   const versions = md.versions || {};
@@ -992,10 +1033,12 @@ function polRoute(name) {
 }
 
 async function polList() {
+  const g = gen;
   $("pol-title").textContent = "Policies";
   const out = $("pol-out");
   pageState(out, "loading", "Loading policies…");
   const r = await api("LIST", POL_LIST);
+  if (stale(g)) return;
   if (!r.ok) { errorState(out, r, "sys/policies/acl"); return; }
   const keys = (r.body && r.body.data && r.body.data.keys) || [];
   if (!keys.length) { pageState(out, "empty", "No policies defined."); return; }
@@ -1015,10 +1058,12 @@ async function polList() {
 }
 
 async function polRead(name) {
+  const g = gen;
   $("pol-title").textContent = name;
   const out = $("pol-out");
   pageState(out, "loading", "Loading " + name + "…");
   const r = await api("GET", POL(name));
+  if (stale(g)) return;
   if (!r.ok) { errorState(out, r, "sys/policies/acl/" + name); return; }
   const doc = r.body && r.body.data && r.body.data.policy;
   // The policy arrives as text (as in Vault); pretty-print it when it is JSON.

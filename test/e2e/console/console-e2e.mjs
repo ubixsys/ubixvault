@@ -169,6 +169,8 @@ check("kv: JSON view masks values", (await inner("#kv-out pre")).includes("*****
 await clickText("#kv-out", "Reveal values");
 await sleep(200);
 check("kv: JSON reveal shows values", (await inner("#kv-out pre")).includes("s3cret-e2e"));
+await go("#/policies");
+check("kv: revealed values leave the DOM when the page changes", !(await js(`return document.documentElement.innerHTML.includes("s3cret-e2e");`)));
 await go("#/kv/");
 check("kv: revealed values are gone after navigating", !(await js(`return document.body.innerText.includes("s3cret-e2e");`)));
 check("kv: folder lists app/", (await inner("#kv-out")).includes("app/"), await inner("#kv-out"));
