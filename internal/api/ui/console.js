@@ -670,11 +670,18 @@ async function loadDashboard() {
 }
 
 // ---- KV v2 browser ----
-const KV_DATA = (p) => "/v1/secret/data/" + p;
-const KV_META = (p) => "/v1/secret/metadata/" + p;
-const KV_UNDELETE = (p) => "/v1/secret/undelete/" + p;
-const KV_DELETE_V = (p) => "/v1/secret/delete/" + p;
-const KV_DESTROY = (p) => "/v1/secret/destroy/" + p;
+// Every segment is percent-encoded, and paths with "." or ".." segments are
+// refused before they get here (badPath), so a crafted link cannot steer a
+// request to another API path.
+const encPath = (p) => p.split("/").map(encodeURIComponent).join("/");
+const KV_DATA = (p) => "/v1/secret/data/" + encPath(p);
+const KV_META = (p) => "/v1/secret/metadata/" + encPath(p);
+const KV_UNDELETE = (p) => "/v1/secret/undelete/" + encPath(p);
+const KV_DELETE_V = (p) => "/v1/secret/delete/" + encPath(p);
+const KV_DESTROY = (p) => "/v1/secret/destroy/" + encPath(p);
+
+// badPath reports a path with a "." or ".." segment (also once decoded).
+const badPath = (p) => p.split("/").some((seg) => seg === "." || seg === "..");
 
 function cleanPath(raw) {
   let p = (raw || "").trim().replace(/^\/+/, "");
@@ -701,6 +708,12 @@ let kvFolderNow = "";
 function kvRoute(path) {
   const p = cleanPath(path);
   closeEditor();
+  if (badPath(p)) {
+    setCrumbs([["Secrets", "#/kv/"], ["secret", "#/kv/"]]);
+    $("kv-title").textContent = "Key/value";
+    pageState($("kv-out"), "error", "A secret path cannot contain \".\" or \"..\" segments.");
+    return;
+  }
   kvCrumbs(p);
   $("kv-path").value = "";
   if (p === "" || p.endsWith("/")) { kvFolderNow = p; kvFolder(p); }
@@ -1006,6 +1019,7 @@ function collectFields() {
 
 async function saveSecret() {
   const p = cleanPath($("editor-path").value);
+  if (badPath(p)) { toast("A secret path cannot contain . or .. segments.", "error"); $("editor-path").focus(); return; }
   if (!p || p.endsWith("/")) { toast("Enter a secret path that does not end in /.", "error"); $("editor-path").focus(); return; }
   const data = collectFields();
   if (!Object.keys(data).length) { toast("Add at least one field with a key.", "error"); return; }
@@ -1325,10 +1339,20 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Keep the seal badge current; a vault that seals sends the console back to
   // the lifecycle page.
+  // A sealed vault switches at once; an unreachable one only after two polls
+  // in a row fail, so one dropped request does not throw away an open editor.
+  let misses = 0;
   setInterval(async () => {
     if (document.hidden || showingInitSecrets) return;
     const before = mode();
+    const was = { ...vault };
     await refreshStatus();
+    if (!vault.reachable && was.reachable && before === "shell") {
+      misses++;
+      if (misses < 2) { Object.assign(vault, was); setBadge("error", "Connection lost, retrying…"); return; }
+    } else {
+      misses = 0;
+    }
     if (mode() !== before) { await refreshSession(); render(); }
   }, 15000);
 });

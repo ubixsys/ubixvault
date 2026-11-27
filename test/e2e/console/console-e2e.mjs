@@ -201,6 +201,8 @@ await clickText("#kv-out .history .confirm", "Yes");
 await settle();
 check("kv: v2 destroyed after typed confirm", (await inner("#kv-out .history")).includes("destroyed"), (await inner("#kv-out .history")).replace(/\s+/g, " ").slice(0, 160));
 await shot("07-kv-versions");
+await go("#/kv/app/%2E%2E/%2E%2E/sys/policies/acl");
+check("kv: dot segments in a link are refused", (await inner("#kv-out .state.error")).includes("cannot contain"), await inner("#kv-out"));
 await go("#/kv/missing/secret");
 check("kv: missing secret shows empty state", (await inner("#kv-out .state")).includes("There is no secret"), await inner("#kv-out"));
 
