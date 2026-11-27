@@ -231,7 +231,9 @@ async function refreshStatus() {
     api("GET", "/v1/sys/health"),
     api("GET", "/v1/sys/seal-status"),
   ]);
-  if (seal.status === 0 || !seal.body) {
+  // Only a real seal-status answer counts: a proxy error or a 5xx with a JSON
+  // body must not read as "uninitialized" and eject a signed-in user.
+  if (!seal.ok || !seal.body || typeof seal.body.initialized !== "boolean") {
     vault.reachable = false;
     hero.dataset.state = "error";
     $("seal-word").textContent = "Unreachable";
@@ -682,6 +684,10 @@ const KV_DESTROY = (p) => "/v1/secret/destroy/" + encPath(p);
 
 // badPath reports a path with a "." or ".." segment (also once decoded).
 const badPath = (p) => p.split("/").some((seg) => seg === "." || seg === "..");
+// badName reports a policy or role name that would not stay one path segment
+// once the browser normalises the URL.
+const badName = (n) => n === "." || n === ".." || n.includes("/");
+const BAD_NAME = "A name cannot be \".\", \"..\" or contain \"/\".";
 
 function cleanPath(raw) {
   let p = (raw || "").trim().replace(/^\/+/, "");
@@ -1037,6 +1043,12 @@ const POL_LIST = "/v1/sys/policies/acl";
 function polRoute(name) {
   closePolEditor();
   $("cap-out").replaceChildren();
+  if (name && badName(name)) {
+    setCrumbs([["Access", "#/policies"], ["Policies", "#/policies"]]);
+    $("pol-title").textContent = "Policies";
+    pageState($("pol-out"), "error", BAD_NAME);
+    return;
+  }
   if (name) {
     setCrumbs([["Access", "#/policies"], ["Policies", "#/policies"], [name, "#/policies/" + encodeURIComponent(name)]]);
     polRead(name);
@@ -1111,6 +1123,7 @@ async function polSave() {
   const n = $("pol-name").value.trim();
   const body = $("pol-body").value.trim();
   if (!n) { toast("Enter a policy name.", "error"); $("pol-name").focus(); return; }
+  if (badName(n)) { toast(BAD_NAME, "error"); $("pol-name").focus(); return; }
   if (!body) { toast("The policy document is empty.", "error"); return; }
   const r = await apiRaw("PUT", POL(n), body);
   if (!r.ok) { toast(friendlyError(r.status, r.body), "error"); return; }
@@ -1121,6 +1134,7 @@ async function polSave() {
 }
 
 async function polDelete(name) {
+  if (badName(name)) { toast(BAD_NAME, "error"); return; }
   const r = await api("DELETE", POL(name));
   if (!r.ok) { toast(friendlyError(r.status, r.body), "error"); return; }
   toast("Deleted policy " + name + ".");
@@ -1206,6 +1220,7 @@ async function pkiRoleList() {
 async function pkiRoleRead(name) {
   const n = (name || "").trim();
   if (!n) { panelMsg("pki-role-out", "error", "Enter a role name."); return; }
+  if (badName(n)) { panelMsg("pki-role-out", "error", BAD_NAME); return; }
   const r = await api("GET", PKI_ROLE(n));
   if (!r.ok) { panelMsg("pki-role-out", "error", friendlyError(r.status, r.body)); return; }
   const d = (r.body && r.body.data) || {};
@@ -1225,6 +1240,7 @@ async function pkiRoleRead(name) {
 function pkiOpenRoleEditor(name, existing) {
   const n = (name || $("pki-role-name").value || "").trim();
   if (!n) { panelMsg("pki-role-out", "error", "Enter a role name first."); $("pki-role-name").focus(); return; }
+  if (badName(n)) { panelMsg("pki-role-out", "error", BAD_NAME); return; }
   const ed = $("pki-role-editor");
   ed.dataset.name = n;
   $("pki-role-editor-name").textContent = n;
@@ -1258,6 +1274,7 @@ async function pkiIssue() {
   const role = $("pki-issue-role").value.trim();
   const cn = $("pki-issue-cn").value.trim();
   if (!role || !cn) { panelMsg("pki-issue-out", "error", "Role and common name are required."); return; }
+  if (badName(role)) { panelMsg("pki-issue-out", "error", BAD_NAME); return; }
   const alt = $("pki-issue-alt").value.split(",").map((s) => s.trim()).filter(Boolean);
   const ttl = $("pki-issue-ttl").value.trim();
   const body = { common_name: cn };
