@@ -6,6 +6,15 @@ All notable changes to uBixVault are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **`GET /v1/sys/internal/ui/mounts`**, as in Vault, without a token: the
+  sign-in methods a person can use from the console that are set up. `token/`
+  always, `userpass/` once it has a user, `ldap/` once it is configured.
+  Machine methods (AppRole, Kubernetes, JWT, cert) and secrets engines are not
+  listed. It reveals only whether userpass has users and whether LDAP is
+  configured. `503` while sealed.
+
 ### Changed
 
 - **The web console is reorganised into an application.** A sidebar
@@ -24,8 +33,11 @@ All notable changes to uBixVault are documented here. The format is based on
   are dropped as soon as you leave the page.
 - **Policies:** a list, a page per policy, an editor, and a "check a path"
   box that shows what your token may do there.
-- Loading, empty, error and "not allowed" states on every page, a light theme
-  that follows the system (with a switch), and a menu for narrow screens. The
+- Loading, empty, error and "not allowed" states on every page, light and dark
+  themes that follow the system by default (the Theme button cycles System,
+  Light and Dark), and a menu for narrow screens.
+- **Sign in offers only the methods that are set up** (from
+  `sys/internal/ui/mounts`), and hides the picker when there is only one. The
   console still loads nothing from outside the vault and has no dependencies.
 
 ## [1.7.0] — 2026-11-12

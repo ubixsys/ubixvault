@@ -127,6 +127,9 @@ check("unseal: sign-in page shown", (await mode()) === "signin" && (await visibl
 check("unseal: badge says Unsealed", (await text("seal-badge-text")).startsWith("Unsealed"), await text("seal-badge-text"));
 
 // ---- 5. sign in with the root token → dashboard
+const methods = () => js(`return [...document.getElementById("login-method").options].map(o => o.value).join(",");`);
+check("sign-in: a fresh vault offers only Token", (await methods()) === "token", await methods());
+check("sign-in: the method picker is hidden with one method", !(await visible("login-method")));
 await setVal("login-method", "token");
 check("sign-in: token field shown for Token method", await visible("login-token"));
 check("sign-in: username hidden for Token method", !(await visible("login-user")));
@@ -232,13 +235,17 @@ await go("#/kv/app/config");
 await send("Page.reload");
 await sleep(2000);
 check("reload: deep link lands on the secret", (await visible("page-kv")) && (await inner("#kv-title")) === "app/config", await inner("#kv-title"));
+const themeState = () => js(`return (document.documentElement.dataset.theme || "system") + "|" + document.getElementById("theme-toggle").textContent;`);
+check("theme: follows the system by default", (await themeState()) === "system|Theme: System", await themeState());
 await js(`document.getElementById("theme-toggle").click(); return true;`);
-await sleep(300);
-const theme = await js(`return document.documentElement.dataset.theme;`);
-check("theme: switch sets an explicit theme", theme === "light" || theme === "dark", theme);
+check("theme: first click is Light", (await themeState()) === "light|Theme: Light", await themeState());
 await go("#/");
-await shot("09-dashboard-other-theme");
+await shot("09-dashboard-light");
 await js(`document.getElementById("theme-toggle").click(); return true;`);
+check("theme: second click is Dark", (await themeState()) === "dark|Theme: Dark", await themeState());
+await js(`document.getElementById("theme-toggle").click(); return true;`);
+check("theme: third click goes back to System", (await themeState()) === "system|Theme: System", await themeState());
+check("theme: System clears the stored choice", (await js(`return localStorage.getItem("ubixvault.theme");`)) === null);
 await go("#/nowhere");
 check("router: unknown page shows Not found", await visible("page-notfound"));
 
@@ -254,6 +261,8 @@ check("forget: back on the sign-in page", (await mode()) === "signin");
 const rootStill = await fetch(BASE + "/v1/auth/token/lookup-self", { headers: { "X-Vault-Token": root } });
 check("forget: root token still valid on the server", rootStill.status === 200, String(rootStill.status));
 
+check("sign-in: userpass offered once it has a user, LDAP still not", (await methods()) === "userpass,token", await methods());
+check("sign-in: the method picker shows with two methods", await visible("login-method"));
 await setVal("login-method", "userpass");
 await setVal("login-user", "alice");
 await setVal("login-pass", "wrong");

@@ -36,7 +36,7 @@
     <div class="topbar-right">
       <span class="badge" id="seal-badge" data-state="unknown"><span class="dot"></span><span id="seal-badge-text">Connecting…</span></span>
       <span class="version" id="version" title="server version"></span>
-      <button type="button" class="ghost small" id="theme-toggle" aria-label="Switch colour theme">Theme</button>
+      <button type="button" class="ghost small" id="theme-toggle" aria-label="Switch colour theme">Theme: System</button>
     </div>
   </header>
 
@@ -95,7 +95,7 @@
         <h1 class="page-title">Sign in</h1>
         <p class="hint">Your token stays in this browser tab and is sent only to this vault.</p>
         <form class="stack" id="login-form">
-          <label for="login-method">Method</label>
+          <label for="login-method" id="login-method-label">Method</label>
           <select id="login-method">
             <option value="userpass">Username &amp; password</option>
             <option value="ldap">LDAP</option>
