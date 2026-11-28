@@ -171,6 +171,11 @@ func NewHandler(c *core.Core, opts ...Option) *Handler {
 	mux.HandleFunc("GET /v1/sys/seal-status", h.sealStatus)
 	// The console's sign-in methods (Vault's sys/internal/ui/mounts); no token.
 	mux.HandleFunc("GET /v1/sys/internal/ui/mounts", h.uiMounts)
+	// Where a path is mounted and how (the vault/bao CLIs' KV version check); a
+	// token that can do anything in the mount may ask.
+	mux.HandleFunc("GET /v1/sys/internal/ui/mounts/{path...}", h.uiMountForPath)
+	// The fixed secrets engine mounts; read on sys/mounts.
+	mux.HandleFunc("GET /v1/sys/mounts", h.authenticate(h.sysMounts))
 	handleWrite(mux, "/v1/sys/init", h.initialize)
 	handleWrite(mux, "/v1/sys/unseal", h.unseal)
 	handleWrite(mux, "/v1/sys/seal", h.authenticate(h.seal))

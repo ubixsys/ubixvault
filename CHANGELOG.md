@@ -8,6 +8,19 @@ All notable changes to uBixVault are documented here. The format is based on
 
 ### Added
 
+- **`GET /v1/sys/internal/ui/mounts/<path>`**: which mount a path is in and
+  how it is set up, in Vault's shape (`path`, `type`, `options.version` and the
+  rest). The `vault` and `bao` CLIs' `kv` commands ask this before every call;
+  uBixVault answered 404, so they took `secret/` for KV version 1 and every
+  `kv get`, `kv put`, `kv patch` and `kv list` failed. As in Vault, any token
+  that can do something in the mount may ask (`403` otherwise); `401` without a
+  token, `404` for a path in no mount, `503` while sealed. Checked with
+  OpenBao's CLI 2.7.3: `kv put`, `kv patch` (one key, others kept), `kv get`,
+  `kv list`, `kv metadata get`, and a read-only token denied a write.
+- **`GET /v1/sys/mounts`** lists the fixed secrets engine mounts (`secret/` as KV
+  version 2, `cubbyhole/`, `transit/`, `database/`, `pki/`, `identity/`), so
+  `vault secrets list` and `bao secrets list` work. Needs `read` on
+  `sys/mounts`, as in Vault.
 - **`GET /v1/sys/internal/ui/mounts`**, as in Vault, without a token: the
   sign-in methods a person can use from the console that are set up. `token/`
   always, `userpass/` once it has a user, `ldap/` once it is configured.

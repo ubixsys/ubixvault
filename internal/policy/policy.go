@@ -286,6 +286,29 @@ func (a *ACL) Capabilities(path string) []string {
 	return out
 }
 
+// HasAccessUnder reports whether the ACL grants any capability other than deny
+// on some path under prefix (a mount path such as "secret/"). It is Vault's
+// "has mount access" check, used by sys/internal/ui/mounts/<path>: a token may
+// learn which mount a path is in, and how it is configured, if it can do
+// anything at all in that mount. A rule counts if its path is under prefix, or if
+// it is a glob whose stem covers prefix ("secret/*", "*").
+func (a *ACL) HasAccessUnder(prefix string) bool {
+	for _, r := range a.rules {
+		stem := strings.TrimSuffix(r.Path, "*")
+		glob := stem != r.Path
+		under := strings.HasPrefix(r.Path, prefix) || (glob && strings.HasPrefix(prefix, stem))
+		if !under {
+			continue
+		}
+		for _, c := range r.Capabilities {
+			if c != Deny {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func matchPath(pattern, path string) bool {
 	if strings.HasSuffix(pattern, "*") {
 		return strings.HasPrefix(path, strings.TrimSuffix(pattern, "*"))
