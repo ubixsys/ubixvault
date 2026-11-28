@@ -201,6 +201,23 @@ func TestACLHasAccessUnder(t *testing.T) {
 		{"deny only", acl(Rule{Path: "secret/data/app/*", Capabilities: []Capability{Deny}}), "secret/", false},
 		{"no rules", acl(), "secret/", false},
 		{"similar name is not the mount", acl(Rule{Path: "secrets/data/x", Capabilities: []Capability{Read}}), "secret/", false},
+		// Deny wins, as in Allows.
+		{"grant and deny in one rule", acl(Rule{Path: "secret/*", Capabilities: []Capability{Read, Deny}}), "secret/", false},
+		{"broad deny over a narrower grant", acl(
+			Rule{Path: "secret/*", Capabilities: []Capability{Deny}},
+			Rule{Path: "secret/data/app/*", Capabilities: []Capability{Read}}), "secret/", false},
+		{"exact deny of the granted path", acl(
+			Rule{Path: "secret/data/app/db", Capabilities: []Capability{Deny}},
+			Rule{Path: "secret/data/app/db", Capabilities: []Capability{Read}}), "secret/", false},
+		{"narrow deny inside a broader grant", acl(
+			Rule{Path: "secret/data/app/db", Capabilities: []Capability{Deny}},
+			Rule{Path: "secret/data/app/*", Capabilities: []Capability{Read}}), "secret/", true},
+		{"deny in another mount", acl(
+			Rule{Path: "transit/*", Capabilities: []Capability{Deny}},
+			Rule{Path: "secret/data/app/*", Capabilities: []Capability{Read}}), "secret/", true},
+		{"deny of the whole mount over a global grant", acl(
+			Rule{Path: "secret/*", Capabilities: []Capability{Deny}},
+			Rule{Path: "*", Capabilities: []Capability{Read}}), "secret/", false},
 	}
 	for _, c := range cases {
 		if got := c.a.HasAccessUnder(c.prefix); got != c.want {

@@ -286,24 +286,53 @@ func (a *ACL) Capabilities(path string) []string {
 	return out
 }
 
-// HasAccessUnder reports whether the ACL grants any capability other than deny
-// on some path under prefix (a mount path such as "secret/"). It is Vault's
-// "has mount access" check, used by sys/internal/ui/mounts/<path>: a token may
-// learn which mount a path is in, and how it is configured, if it can do
-// anything at all in that mount. A rule counts if its path is under prefix, or if
-// it is a glob whose stem covers prefix ("secret/*", "*").
+// HasAccessUnder reports whether the ACL grants some capability on some path
+// under prefix (a mount path such as "secret/"). It is Vault's "has mount
+// access" check, used by sys/internal/ui/mounts/<path>: a token may learn which
+// mount a path is in, and how it is configured, if it can do something in that
+// mount. It follows Allows: a rule that includes deny grants nothing, and a
+// grant counts only if no deny rule covers everything it grants. A rule counts
+// if its path is under prefix, or if it is a glob whose stem covers prefix
+// ("secret/*", "*"), in which case what it grants under prefix is prefix itself.
 func (a *ACL) HasAccessUnder(prefix string) bool {
 	for _, r := range a.rules {
-		stem := strings.TrimSuffix(r.Path, "*")
-		glob := stem != r.Path
-		under := strings.HasPrefix(r.Path, prefix) || (glob && strings.HasPrefix(prefix, stem))
-		if !under {
+		if hasCapability(r.Capabilities, Deny) || len(r.Capabilities) == 0 {
 			continue
 		}
-		for _, c := range r.Capabilities {
-			if c != Deny {
+		stem := strings.TrimSuffix(r.Path, "*")
+		glob := stem != r.Path
+		var area string // the broadest path the rule grants under prefix
+		switch {
+		case strings.HasPrefix(r.Path, prefix):
+			area = stem
+		case glob && strings.HasPrefix(prefix, stem):
+			area = prefix
+		default:
+			continue
+		}
+		if !a.deniesAllOf(area, glob) {
+			return true
+		}
+	}
+	return false
+}
+
+// deniesAllOf reports whether a deny rule covers everything at area: the single
+// path area, or, when glob, every path that starts with area.
+func (a *ACL) deniesAllOf(area string, glob bool) bool {
+	for _, r := range a.rules {
+		if !hasCapability(r.Capabilities, Deny) {
+			continue
+		}
+		stem := strings.TrimSuffix(r.Path, "*")
+		if stem != r.Path { // a glob deny covers area if its stem is a prefix of area
+			if strings.HasPrefix(area, stem) {
 				return true
 			}
+			continue
+		}
+		if !glob && r.Path == area { // an exact deny covers only that exact path
+			return true
 		}
 	}
 	return false

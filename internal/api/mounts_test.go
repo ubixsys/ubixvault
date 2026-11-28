@@ -60,6 +60,11 @@ func TestUIMountForPath_TokenWithAccessInTheMount(t *testing.T) {
 func TestUIMountForPath_Refusals(t *testing.T) {
 	h, root := unsealedHandler(t)
 	noAccess := createToken(t, h, root, `["default"]`)
+	denyDoc := `{"path":{"secret/*":{"capabilities":["deny"]},"secret/data/app/*":{"capabilities":["read"]}}}`
+	if rec := doAuth(t, h, "PUT", "/v1/sys/policies/acl/denied", denyDoc, root); rec.Code != http.StatusNoContent {
+		t.Fatalf("write policy = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	denied := createToken(t, h, root, `["denied"]`)
 	cases := []struct {
 		name, path, token string
 		want              int
@@ -68,6 +73,7 @@ func TestUIMountForPath_Refusals(t *testing.T) {
 		{"unknown token", "secret/app", "uv.not-a-token", http.StatusForbidden},
 		{"no access in the mount", "secret/app", noAccess, http.StatusForbidden},
 		{"not a mount", "nothing/here", root, http.StatusNotFound},
+		{"grant covered by a deny on the mount", "secret/app", denied, http.StatusForbidden},
 	}
 	for _, c := range cases {
 		if rec := doAuth(t, h, "GET", "/v1/sys/internal/ui/mounts/"+c.path, "", c.token); rec.Code != c.want {
