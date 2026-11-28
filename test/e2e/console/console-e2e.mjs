@@ -271,6 +271,18 @@ check("access: create refuses an existing name and keeps its password", dupToast
 await js(`document.getElementById("access-cancel").click(); return true;`);
 await shot("08b-access-user");
 
+// LDAP answers 200 for a missing group, so it gets its own existence checks.
+await go("#/access/ldap/ghost");
+check("access: a missing LDAP group is not found", (await inner("#access-out .state.empty")).includes("no group named ghost"), await inner("#access-out"));
+await go("#/access/ldap");
+await js(`document.getElementById("access-new").click(); return true;`);
+await settle();
+await setVal("access-name", "ops");
+await setVal("af-policies", "readers");
+await submit("access-editor");
+await sleep(1200);
+check("access: a new LDAP group is created", (await js(`return location.hash;`)) === "#/access/ldap/ops" && (await inner("#access-out")).includes("readers"), await inner("#access-out"));
+
 await go("#/access/approle");
 await js(`document.getElementById("access-new").click(); return true;`);
 await settle();

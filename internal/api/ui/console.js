@@ -1294,6 +1294,14 @@ const ACCESS = {
     required: ["policies"],
   },
 };
+// found tells a real entry from a miss. Most methods answer 404 for a missing
+// name; LDAP answers 200 with null policies, so its entry is real only with them.
+function found(method, r) {
+  if (r.status === 404) return false;
+  if (!r.ok) return null;
+  const d = r.body && r.body.data;
+  return method === "ldap" ? !!(d && Array.isArray(d.policies)) : true;
+}
 const ACCESS_ORDER = ["userpass", "approle", "kubernetes", "jwt", "cert", "ldap"];
 const accessHref = (m, name) => "#/access/" + m + (name ? "/" + encodeURIComponent(name) : "");
 const ACCESS_URL = (m, name) => "/v1/" + ACCESS[m].base + (name ? "/" + encodeURIComponent(name) : "");
@@ -1399,7 +1407,7 @@ async function accessItem(method, name) {
   const extra = method === "approle" ? [path + "/role-id", path + "/secret-id"] : [];
   const [r, caps] = await Promise.all([api("GET", ACCESS_URL(method, name)), can([path, ...extra])]);
   if (stale(g)) return;
-  if (r.status === 404) { pageState(out, "empty", "There is no " + m.noun + " named " + name + "."); return; }
+  if (found(method, r) === false) { pageState(out, "empty", "There is no " + m.noun + " named " + name + "."); return; }
   if (!r.ok) { errorState(out, r, path); return; }
   const d = (r.body && r.body.data) || {};
   const c = capsOf(caps, path);
@@ -1529,10 +1537,17 @@ async function saveAccess() {
   // The server's write is an upsert: refuse to "create" over an existing entry,
   // which for userpass would silently reset someone's password.
   if (!existing) {
+    // Only a 404 proves the name is free; anything else (a 403 for a token that
+    // may write but not read, an outage) could hide an entry, so stop.
     const prior = await api("GET", ACCESS_URL(method, name));
-    if (prior.ok) {
+    const there = found(method, prior);
+    if (there) {
       toast("A " + m.noun + " named " + name + " already exists. Open it to edit.", "error");
       $("access-name").focus();
+      return;
+    }
+    if (there === null) {
+      toast("Could not check whether " + name + " exists (" + friendlyError(prior.status, prior.body) + "). Nothing was saved.", "error");
       return;
     }
   }
