@@ -188,8 +188,14 @@ function fmtDuration(s) {
 }
 
 // ---- theme ----
+// The theme is "system" (follow the OS, the default), "light" or "dark". The
+// button cycles through the three; the choice is kept per browser.
+const THEMES = ["system", "light", "dark"];
+
 function storedTheme() {
-  try { return localStorage.getItem(THEME_KEY) || ""; } catch (_) { return ""; }
+  let t = "";
+  try { t = localStorage.getItem(THEME_KEY) || ""; } catch (_) { /* storage blocked */ }
+  return THEMES.includes(t) ? t : "system";
 }
 
 function effectiveTheme() {
@@ -198,17 +204,26 @@ function effectiveTheme() {
   return window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
 }
 
+let theme = "system";
+
 function applyTheme(t) {
-  if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
-  else delete document.documentElement.dataset.theme;
-  const next = effectiveTheme() === "dark" ? "light" : "dark";
-  $("theme-toggle").textContent = next === "light" ? "Light" : "Dark";
-  $("theme-toggle").setAttribute("aria-label", "Switch to the " + next + " theme");
+  theme = THEMES.includes(t) ? t : "system";
+  if (theme === "system") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = theme;
+  const label = { system: "System", light: "Light", dark: "Dark" }[theme];
+  const next = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
+  const b = $("theme-toggle");
+  b.textContent = "Theme: " + label;
+  b.title = theme === "system" ? "Following the system (" + effectiveTheme() + ")" : label + " theme";
+  b.setAttribute("aria-label", "Theme: " + label + ". Switch to " + next + ".");
 }
 
 function toggleTheme() {
-  const next = effectiveTheme() === "dark" ? "light" : "dark";
-  try { localStorage.setItem(THEME_KEY, next); } catch (_) { /* per-tab only */ }
+  const next = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
+  try {
+    if (next === "system") localStorage.removeItem(THEME_KEY);
+    else localStorage.setItem(THEME_KEY, next);
+  } catch (_) { /* per-tab only */ }
   applyTheme(next);
 }
 
@@ -363,6 +378,32 @@ async function submitUnsealShare() {
 
 // ---- session: sign in, who am I, renew, sign out ----
 const LOGIN_METHODS = { userpass: "Username & password", ldap: "LDAP", token: "Token" };
+
+// The sign-in methods to offer: those the vault says are set up (Vault's
+// sys/internal/ui/mounts, no token needed). If the vault cannot say, all three
+// stay, so sign-in never becomes impossible.
+const METHOD_ORDER = ["userpass", "ldap", "token"];
+
+async function loadLoginMethods() {
+  const r = await api("GET", "/v1/sys/internal/ui/mounts");
+  const auth = r.ok && r.body && r.body.data && r.body.data.auth;
+  if (!auth) return;
+  const available = METHOD_ORDER.filter((m) => auth[m + "/"]);
+  if (!available.length) return;
+  const sel = $("login-method");
+  const was = sel.value;
+  sel.replaceChildren();
+  for (const m of available) {
+    const o = el("option", null, LOGIN_METHODS[m]);
+    o.value = m;
+    sel.appendChild(o);
+  }
+  sel.value = available.includes(was) ? was : available[0];
+  // With a single method there is nothing to choose.
+  $("login-method").hidden = available.length === 1;
+  $("login-method-label").hidden = available.length === 1;
+  reflectLoginMethod();
+}
 
 function reflectLoginMethod() {
   const tokenMode = $("login-method").value === "token";
@@ -557,7 +598,11 @@ function render() {
   if (m === "lifecycle") { showPage("lifecycle"); lastMode = m; return; }
   if (m === "signin") {
     showPage("signin");
-    if (lastMode !== m) $("login-method").focus();
+    if (lastMode !== m) loadLoginMethods().then(() => {
+      if (mode() !== "signin") return; // moved on while the request was out
+      const first = $("login-method").hidden ? ($("login-token").hidden ? $("login-user") : $("login-token")) : $("login-method");
+      first.focus();
+    });
     lastMode = m;
     return;
   }

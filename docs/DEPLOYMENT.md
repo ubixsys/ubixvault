@@ -380,7 +380,10 @@ state and of each engine and auth method with the token's capabilities on it,
 and lets an operator browse and edit KV v2 secrets (values hidden until
 revealed; version history with soft-delete / undelete / destroy), manage ACL
 policies and check what a token may do on a path, mint scoped tokens, and run
-the PKI CA. Pages have their own addresses (`/ui/#/kv/app/config`). The assets
+the PKI CA. Pages have their own addresses (`/ui/#/kv/app/config`). The sign-in form offers
+only the methods that are set up, read from the unauthenticated
+`/v1/sys/internal/ui/mounts` (it tells a visitor whether userpass has users and
+whether LDAP is configured, nothing more). The assets
 are static and embedded in the binary under a strict Content-Security-Policy;
 the token is held only in the browser tab, and every write goes through the
 audited `/v1` API.
