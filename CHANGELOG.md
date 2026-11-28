@@ -14,6 +14,12 @@ All notable changes to uBixVault are documented here. The format is based on
   Machine methods (AppRole, Kubernetes, JWT, cert) and secrets engines are not
   listed. It reveals only whether userpass has users and whether LDAP is
   configured. `503` while sealed.
+- **Helm: `sealExternal`** wires the external-command seal (`-seal-external-*`)
+  into the chart, so a Kubernetes deployment can wrap its master key with a
+  cloud KMS or HSM instead of a key in a cluster Secret. An optional helper
+  init container copies the command into the distroless pod; `volumes` and
+  `volumeMounts` carry provider credentials. The chart refuses more than one of
+  `autoUnseal`, `sealTransit` and `sealExternal`. Off by default. Chart 0.1.24.
 
 ### Changed
 
