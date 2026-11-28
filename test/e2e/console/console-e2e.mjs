@@ -283,6 +283,8 @@ await settle();
 check("access: user deleted, back on the list", (await js(`return location.hash;`)) === "#/access/userpass" && !(await inner("#access-out")).includes("bob"), await inner("#access-out"));
 await go("#/access/nope");
 check("access: unknown method", (await inner("#access-out .state.error")).includes("no auth method"), await inner("#access-out"));
+await go("#/access/constructor");
+check("access: inherited name is not a method", (await inner("#access-out .state.error")).includes("no auth method"), await inner("#access-out"));
 
 // ---- 8. deep link survives a reload; light theme
 await go("#/kv/app/config");

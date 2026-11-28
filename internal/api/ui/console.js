@@ -1312,7 +1312,8 @@ function accessRoute(method, name) {
   closeAccessEditor();
   $("access-new").hidden = true;
   if (!method) { accessIndex(); return; }
-  const m = ACCESS[method];
+  // Own keys only: "#/access/constructor" must not reach Object.prototype.
+  const m = Object.hasOwn(ACCESS, method) ? ACCESS[method] : null;
   if (!m || (name && badName(name))) {
     setCrumbs([["Access", "#/access"], ["Not found", location.hash]]);
     $("access-title").textContent = "Access";
@@ -1395,7 +1396,8 @@ async function accessItem(method, name) {
   const out = $("access-out");
   pageState(out, "loading", "Loading " + name + "…");
   const path = m.base + "/" + name;
-  const [r, caps] = await Promise.all([api("GET", ACCESS_URL(method, name)), can([path])]);
+  const extra = method === "approle" ? [path + "/role-id", path + "/secret-id"] : [];
+  const [r, caps] = await Promise.all([api("GET", ACCESS_URL(method, name)), can([path, ...extra])]);
   if (stale(g)) return;
   if (r.status === 404) { pageState(out, "empty", "There is no " + m.noun + " named " + name + "."); return; }
   if (!r.ok) { errorState(out, r, path); return; }
@@ -1416,16 +1418,20 @@ async function accessItem(method, name) {
   const table = el("table", "kv-table");
   kvRows(table, m.fields.filter((f) => f.type !== "password").map((f) => [f.label, fieldText(f, d[f.k]) || "—"]));
   out.replaceChildren(acts, table);
-  if (method === "approle") approleCredentials(out, name);
+  if (method === "approle") {
+    approleCredentials(out, name, allows(capsOf(caps, extra[0]), "read"), allows(capsOf(caps, extra[1]), "update", "create"));
+  }
 }
 
 // approleCredentials shows the role ID and mints a secret ID on request (shown once).
-function approleCredentials(out, name) {
+// Each button shows only when the token may use it.
+function approleCredentials(out, name, canRoleID, canSecretID) {
+  if (!canRoleID && !canSecretID) return;
   const panel = el("section", "panel");
   panel.appendChild(el("h2", null, "Credentials"));
   const body = el("div", "view");
   const acts = el("div", "kv-actions");
-  acts.appendChild(actionButton("Show role ID", "ghost small", async () => {
+  if (canRoleID) acts.appendChild(actionButton("Show role ID", "ghost small", async () => {
     const r = await api("GET", ACCESS_URL("approle", name) + "/role-id");
     if (!r.ok) { toast(friendlyError(r.status, r.body), "error"); return; }
     const id = (r.body && r.body.data && r.body.data.role_id) || "";
@@ -1442,7 +1448,7 @@ function approleCredentials(out, name) {
     row.append(el("span", "n", "secret"), el("code", null, sid), actionButton("Copy", "ghost small", () => copy(sid, "Secret ID")));
     body.replaceChildren(row, el("div", "warn", "Copy it now — it is shown once."));
   }));
-  acts.appendChild(gen2);
+  if (canSecretID) acts.appendChild(gen2);
   panel.append(el("p", "hint", "A machine signs in with both. The secret ID is shown once."), acts, body);
   out.appendChild(panel);
 }
