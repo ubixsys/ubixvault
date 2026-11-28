@@ -273,7 +273,7 @@ docker run -d --name ubixvault \
   -p 8200:8200 \
   -v ubixvault-data:/var/lib/ubixvault \
   -v /etc/ubixvault:/tls:ro \
-  ghcr.io/ubixsys/ubixvault:1.8.0 server -listen 0.0.0.0:8200 \
+  ghcr.io/ubixsys/ubixvault:1.8.1 server -listen 0.0.0.0:8200 \
     -data /var/lib/ubixvault -tls-cert /tls/tls.crt -tls-key /tls/tls.key
 ```
 
@@ -281,7 +281,7 @@ The TLS files must be readable by uid 65532 too. With a host directory instead
 of a named volume, `chown 65532:65532` it the same way. (On Kubernetes the Helm
 chart's pod `fsGroup` does this for you.)
 
-Image tags are the release version without the `v` (`1.8.0`); `edge` and
+Image tags are the release version without the `v` (`1.8.1`); `edge` and
 `sha-<commit>` tags track unreleased builds from `main`. Provide the auto-unseal
 KEK via `-e UBIXVAULT_AUTO_UNSEAL_KEY=...` (ideally from a Docker/Kubernetes
 secret, not a plain env var in your compose file).
@@ -595,8 +595,8 @@ and carry an **SPDX SBOM attestation**, both produced in CI via GitHub OIDC and
 bound to the image digest. Verify a release before deploying:
 
 ```sh
-IMAGE=ghcr.io/ubixsys/ubixvault:1.8.0
-IDENTITY='https://github.com/ubixsys/ubixvault/.github/workflows/image.yml@refs/tags/v1.8.0'
+IMAGE=ghcr.io/ubixsys/ubixvault:1.8.1
+IDENTITY='https://github.com/ubixsys/ubixvault/.github/workflows/image.yml@refs/tags/v1.8.1'
 
 # Verify the signature came from this repo's release workflow.
 cosign verify "$IMAGE" \

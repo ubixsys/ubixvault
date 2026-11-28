@@ -6,6 +6,30 @@ All notable changes to uBixVault are documented here. The format is based on
 
 ## [Unreleased]
 
+## [1.8.1] — 2026-11-28
+
+> The `vault` and `bao` CLIs' `kv` commands work against uBixVault. They ask
+> where a path is mounted before every call, and uBixVault had no answer, so
+> every `kv get`, `kv put`, `kv patch` and `kv list` failed. No storage
+> migration, no breaking change.
+
+### Fixed
+
+- **`GET /v1/sys/internal/ui/mounts/<path>`**: which mount a path is in and
+  how it is set up, in Vault's shape (`path`, `type`, `options.version` and the
+  rest). The `vault` and `bao` CLIs' `kv` commands ask this before every call;
+  uBixVault answered 404, so they took `secret/` for KV version 1 and every
+  `kv get`, `kv put`, `kv patch` and `kv list` failed. As in Vault, any token
+  that can do something in the mount may ask, and deny rules win as they do
+  everywhere else (`403` otherwise); `401` without a
+  token, `404` for a path in no mount, `503` while sealed. Checked with
+  OpenBao's CLI 2.7.3: `kv put`, `kv patch` (one key, others kept), `kv get`,
+  `kv list`, `kv metadata get`, and a read-only token denied a write.
+- **`GET /v1/sys/mounts`** (new) lists the fixed secrets engine mounts (`secret/` as KV
+  version 2, `cubbyhole/`, `transit/`, `database/`, `pki/`, `identity/`), so
+  `vault secrets list` and `bao secrets list` work. Needs `read` on
+  `sys/mounts`, as in Vault.
+
 ## [1.8.0] — 2026-11-27
 
 > The web console becomes an application: a sidebar, a dashboard, a key/value
@@ -16,19 +40,6 @@ All notable changes to uBixVault are documented here. The format is based on
 
 ### Added
 
-- **`GET /v1/sys/internal/ui/mounts/<path>`**: which mount a path is in and
-  how it is set up, in Vault's shape (`path`, `type`, `options.version` and the
-  rest). The `vault` and `bao` CLIs' `kv` commands ask this before every call;
-  uBixVault answered 404, so they took `secret/` for KV version 1 and every
-  `kv get`, `kv put`, `kv patch` and `kv list` failed. As in Vault, any token
-  that can do something in the mount may ask (`403` otherwise); `401` without a
-  token, `404` for a path in no mount, `503` while sealed. Checked with
-  OpenBao's CLI 2.7.3: `kv put`, `kv patch` (one key, others kept), `kv get`,
-  `kv list`, `kv metadata get`, and a read-only token denied a write.
-- **`GET /v1/sys/mounts`** lists the fixed secrets engine mounts (`secret/` as KV
-  version 2, `cubbyhole/`, `transit/`, `database/`, `pki/`, `identity/`), so
-  `vault secrets list` and `bao secrets list` work. Needs `read` on
-  `sys/mounts`, as in Vault.
 - **`GET /v1/sys/internal/ui/mounts`**, as in Vault, without a token: the
   sign-in methods a person can use from the console that are set up. `token/`
   always, `userpass/` once it has a user, `ldap/` once it is configured.
@@ -789,6 +800,7 @@ Eleventh beta: cloud-KMS / HSM auto-unseal — the last 1.0 engineering gate.
   a failing or slow command leaves the vault sealed (fail-safe). Joins the static
   KEK and transit seals behind the same interface.
 
+[1.8.1]: https://github.com/ubixsys/ubixvault/releases/tag/v1.8.1
 [1.8.0]: https://github.com/ubixsys/ubixvault/releases/tag/v1.8.0
 [1.7.0]: https://github.com/ubixsys/ubixvault/releases/tag/v1.7.0
 [1.6.0]: https://github.com/ubixsys/ubixvault/releases/tag/v1.6.0
