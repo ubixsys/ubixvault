@@ -185,6 +185,7 @@ partial analogs are completed.
 - [x] **Cubbyhole** — per-token private storage, destroyed on token revoke.
 - [x] **OIDC discovery** — resolve the JWKS URL from `.well-known/openid-configuration`.
 - [x] **Delegated policy administration** (1.7.0) — ACL `allowed_parameters` / `denied_parameters` / `required_parameters` (ADR D-024); partial role updates and `token_policies` on every auth method; `sys/capabilities(-self)`; roles can no longer grant `root`.
+- [x] **Console as an application** (1.8.0) — sidebar, dashboard, key/value browser, users and roles for every auth method, controls that follow `sys/capabilities-self`, sign-in methods from `sys/internal/ui/mounts`, system-following themes; Helm `sealExternal`.
 
 ### Toward Vault Enterprise parity (Enterprise-differentiated features)
 Mostly large and compliance-oriented; listed so the gap is explicit (see
