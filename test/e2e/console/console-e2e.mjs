@@ -253,6 +253,12 @@ check("router: unknown page shows Not found", await visible("page-notfound"));
 const mk = await fetch(BASE + "/v1/auth/userpass/users/alice", { method: "POST", headers: { "X-Vault-Token": root },
   body: JSON.stringify({ password: "pw-console-e2e", policies: ["readers"] }) });
 check("setup: userpass user created", mk.status === 204, String(mk.status));
+// The sign-in methods are cached for up to 10 s; wait until the new user shows.
+for (let i = 0; i < 30; i++) {
+  const m = await (await fetch(BASE + "/v1/sys/internal/ui/mounts")).json();
+  if (m.data && m.data.auth && m.data.auth["userpass/"]) break;
+  await sleep(500);
+}
 await go("#/");
 await js(`document.getElementById("logout").click(); return true;`);
 await settle();

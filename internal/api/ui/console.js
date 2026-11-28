@@ -599,6 +599,7 @@ function render() {
   if (m === "signin") {
     showPage("signin");
     if (lastMode !== m) loadLoginMethods().then(() => {
+      if (mode() !== "signin") return; // moved on while the request was out
       const first = $("login-method").hidden ? ($("login-token").hidden ? $("login-user") : $("login-token")) : $("login-method");
       first.focus();
     });

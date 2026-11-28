@@ -68,9 +68,10 @@ type Handler struct {
 	tokens         *token.Store
 	policies       *policy.Store
 	audit          *audit.Broker
-	forward        http.Handler // HA: carries a standby's requests to the active replica
-	auditKeyMu     sync.Mutex   // guards auditKeySet
-	auditKeySet    bool         // the barrier's audit HMAC key is installed in audit
+	forward        http.Handler  // HA: carries a standby's requests to the active replica
+	auditKeyMu     sync.Mutex    // guards auditKeySet
+	auditKeySet    bool          // the barrier's audit HMAC key is installed in audit
+	signInCache    uiMountsCache // the console's sign-in methods, cached briefly
 	metrics        *metrics.Metrics
 	quotas         *quota.Manager // rate-limit quotas incl. the default (always non-nil)
 	trustForwarded bool           // key rate limits by X-Forwarded-For

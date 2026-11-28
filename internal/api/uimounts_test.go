@@ -15,6 +15,7 @@ type uiMountsResponse struct {
 
 func uiAuthPaths(t *testing.T, h http.Handler) []string {
 	t.Helper()
+	expireUIMounts(h)
 	rec := do(t, h, "GET", "/v1/sys/internal/ui/mounts", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("ui mounts = %d, body=%s", rec.Code, rec.Body.String())
@@ -70,5 +71,26 @@ func TestUIMountsSealed(t *testing.T) {
 	do(t, h, "POST", "/v1/sys/init", `{"secret_shares":2,"secret_threshold":2}`)
 	if rec := do(t, h, "GET", "/v1/sys/internal/ui/mounts", ""); rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("sealed = %d, want 503 (body=%s)", rec.Code, rec.Body.String())
+	}
+}
+
+// expireUIMounts drops the cached answer so a test sees a change at once.
+func expireUIMounts(h http.Handler) {
+	if hh, ok := h.(*Handler); ok {
+		hh.signInCache.mu.Lock()
+		hh.signInCache.auth = nil
+		hh.signInCache.mu.Unlock()
+	}
+}
+
+func TestUIMountsIsCached(t *testing.T) {
+	h, root := unsealedHandler(t)
+	if got := uiAuthPaths(t, h); len(got) != 1 {
+		t.Fatalf("fresh vault = %v", got)
+	}
+	doAuth(t, h, "POST", "/v1/auth/userpass/users/bob", `{"password":"pw-1234567","policies":["default"]}`, root)
+	rec := do(t, h, "GET", "/v1/sys/internal/ui/mounts", "")
+	if resp := decode[uiMountsResponse](t, rec); len(resp.Data.Auth) != 1 {
+		t.Fatalf("within the TTL the cached answer should be served, got %v", resp.Data.Auth)
 	}
 }
