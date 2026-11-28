@@ -230,6 +230,60 @@ await go("#/policies");
 check("policies: list shows the new policy", (await inner("#pol-out")).includes("readers"), await inner("#pol-out"));
 await shot("08-policy");
 
+// ---- 7b. access: users and roles
+await go("#/access");
+const accessIdx = await inner("#access-out");
+check("access: index lists the auth methods", accessIdx.includes("Username & password") && accessIdx.includes("AppRole") && accessIdx.includes("LDAP groups"), accessIdx.slice(0, 160));
+await go("#/access/userpass");
+check("access: empty userpass list", (await inner("#access-out .state.empty")).includes("No users yet"), await inner("#access-out"));
+check("access: Create user shown to root", await visible("access-new"));
+await js(`document.getElementById("access-new").click(); return true;`);
+await settle();
+await setVal("access-name", "bob");
+await setVal("af-password", "pw-bob-e2e");
+await setVal("af-token_policies", "readers");
+await setVal("af-token_ttl", "1h");
+await submit("access-editor");
+await sleep(1200);
+check("access: user saved and opened", (await js(`return location.hash;`)) === "#/access/userpass/bob", await js(`return location.hash;`));
+const bob = await inner("#access-out");
+check("access: user detail shows policies and TTL, never the password", bob.includes("readers") && bob.includes("1h") && !bob.includes("pw-bob-e2e"), bob.replace(/\s+/g, " ").slice(0, 160));
+await clickText("#access-out", "Edit");
+await settle();
+check("access: edit keeps the name fixed", await js(`return document.getElementById("access-name").readOnly;`));
+await setVal("af-token_policies", "readers, default");
+await submit("access-editor");
+await sleep(1200);
+check("access: edit without a password keeps the user", (await inner("#access-out")).includes("default"), await inner("#access-out"));
+const bobLogin = await fetch(BASE + "/v1/auth/userpass/login/bob", { method: "POST", body: JSON.stringify({ password: "pw-bob-e2e" }) });
+check("access: the password still works after the edit", bobLogin.status === 200, String(bobLogin.status));
+await shot("08b-access-user");
+
+await go("#/access/approle");
+await js(`document.getElementById("access-new").click(); return true;`);
+await settle();
+await setVal("access-name", "ci");
+await setVal("af-token_policies", "default");
+await submit("access-editor");
+await sleep(1200);
+check("access: approle role saved", (await js(`return location.hash;`)) === "#/access/approle/ci");
+await clickText("#access-out", "Show role ID");
+await settle();
+check("access: role ID shown", /[0-9a-f-]{20,}/.test(await inner("#access-out .keyrow code")), await inner("#access-out .keyrow"));
+await clickText("#access-out", "Generate secret ID");
+await sleep(200);
+await clickText("#access-out .confirm", "Yes");
+await settle();
+check("access: secret ID shown once", (await inner("#access-out")).includes("shown once"), await inner("#access-out"));
+await go("#/access/userpass/bob");
+await clickText("#access-out", "Delete");
+await sleep(200);
+await clickText("#access-out .confirm", "Yes");
+await settle();
+check("access: user deleted, back on the list", (await js(`return location.hash;`)) === "#/access/userpass" && !(await inner("#access-out")).includes("bob"), await inner("#access-out"));
+await go("#/access/nope");
+check("access: unknown method", (await inner("#access-out .state.error")).includes("no auth method"), await inner("#access-out"));
+
 // ---- 8. deep link survives a reload; light theme
 await go("#/kv/app/config");
 await send("Page.reload");
@@ -286,10 +340,15 @@ check("sign-in (userpass): button says Sign out", (await text("logout")) === "Si
 const reader = await inner("#dash-engines");
 check("reader: engines show deny where no grant", reader.includes("deny"), reader.slice(0, 120));
 await go("#/policies");
+await go("#/access/userpass");
+check("reader: users page is denied and offers no Create", (await inner("#access-out .state.denied")).includes("not allowed") && !(await visible("access-new")), await inner("#access-out"));
+await go("#/policies");
 check("reader: policies page shows the denied state", (await inner("#pol-out .state.denied")).includes("not allowed"), await inner("#pol-out"));
 await fetch(BASE + "/v1/secret/data/app/config", { method: "POST", headers: { "X-Vault-Token": root },
   body: JSON.stringify({ data: { db_password: "v3-e2e" } }) });
 await go("#/kv/app/config");
+check("reader: no New version or Delete on a read-only secret", !(await js(`return [...document.querySelectorAll("#kv-out button")].some(b => !b.hidden && (b.textContent === "New version" || b.textContent === "Delete"));`)));
+check("reader: no Create secret on a read-only folder", !(await visible("kv-new")));
 check("reader: can read the secret it is granted", !(await inner("#kv-out .state.denied")) && (await inner("#kv-out")).includes("db_password"), await inner("#kv-out"));
 await shot("10-reader-secret");
 await go("#/kv/app/other");

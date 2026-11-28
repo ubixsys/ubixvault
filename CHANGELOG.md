@@ -36,6 +36,13 @@ All notable changes to uBixVault are documented here. The format is based on
 - Loading, empty, error and "not allowed" states on every page, light and dark
   themes that follow the system by default (the Theme button cycles System,
   Light and Dark), and a menu for narrow screens.
+- **Users & roles** (Access): a page per auth method (userpass users, AppRole,
+  Kubernetes, JWT/OIDC, certificate roles, LDAP groups) to list, create, edit
+  (partial updates: an empty password keeps the current one) and delete
+  entries; AppRole shows the role ID and issues a secret ID shown once.
+- **Controls follow your token's permissions**: Create, Edit, Delete, New
+  version, Undelete and Destroy are shown only where `sys/capabilities-self`
+  says the token may use them (the server still enforces every call).
 - **Sign in offers only the methods that are set up** (from
   `sys/internal/ui/mounts`), and hides the picker when there is only one. The
   console still loads nothing from outside the vault and has no dependencies.
