@@ -536,14 +536,15 @@ function parseRoute() {
     case "kv": return { page: "kv", path: rest.map(safeDecode).join("/") };
     case "policies": return { page: "policies", name: safeDecode(rest.join("/")) };
     case "tokens": return { page: "tokens" };
+    case "access": return { page: "access", method: rest[0] || "", name: safeDecode(rest.slice(1).join("/")) };
     case "pki": return { page: "pki" };
     default: return { page: "notfound" };
   }
 }
 
 const kvHref = (p) => "#/kv/" + p.split("/").map(encodeURIComponent).join("/");
-const PAGES = ["lifecycle", "signin", "dashboard", "kv", "policies", "tokens", "pki", "notfound"];
-const TITLES = { dashboard: "Dashboard", kv: "Key/value", policies: "Policies", tokens: "Tokens", pki: "PKI", notfound: "Not found" };
+const PAGES = ["lifecycle", "signin", "dashboard", "kv", "access", "policies", "tokens", "pki", "notfound"];
+const TITLES = { dashboard: "Dashboard", kv: "Key/value", access: "Access", policies: "Policies", tokens: "Tokens", pki: "PKI", notfound: "Not found" };
 
 function showPage(name) {
   for (const p of PAGES) $("page-" + p).hidden = p !== name;
@@ -580,12 +581,13 @@ const stale = (g) => g !== gen;
 // shown once or a private key do not stay in the hidden DOM after leaving it.
 function clearPage(name) {
   const outs = {
-    kv: ["kv-out"], policies: ["pol-out", "cap-out"], tokens: ["tok-out"],
+    kv: ["kv-out"], access: ["access-out"], policies: ["pol-out", "cap-out"], tokens: ["tok-out"],
     pki: ["pki-ca-out", "pki-role-out", "pki-issue-out"], dashboard: ["dash-engines"],
   }[name] || [];
   for (const id of outs) $(id).replaceChildren();
   if (name === "kv") closeEditor();
   if (name === "policies") closePolEditor();
+  if (name === "access") closeAccessEditor();
 }
 
 let lastMode = "";
@@ -618,6 +620,7 @@ function render() {
   switch (route.page) {
     case "dashboard": setCrumbs([["Dashboard", "#/"]]); loadDashboard(); break;
     case "kv": kvRoute(route.path); break;
+    case "access": accessRoute(route.method, route.name); break;
     case "policies": polRoute(route.name); break;
     case "tokens": setCrumbs([["Access", "#/tokens"], ["Tokens", "#/tokens"]]); break;
     case "pki": setCrumbs([["Secrets", "#/kv/"], ["PKI", "#/pki"]]); break;
@@ -635,12 +638,12 @@ const ENGINES = [
   { name: "PKI", kind: "secrets", path: "pki/", probe: "pki/roles/", open: "#/pki" },
   { name: "Cubbyhole", kind: "secrets", path: "cubbyhole/", probe: "cubbyhole/" },
   { name: "Token", kind: "auth", path: "auth/token/", probe: "auth/token/create", open: "#/tokens" },
-  { name: "Username & password", kind: "auth", path: "auth/userpass/", probe: "auth/userpass/users/" },
-  { name: "AppRole", kind: "auth", path: "auth/approle/", probe: "auth/approle/role/" },
-  { name: "Kubernetes", kind: "auth", path: "auth/kubernetes/", probe: "auth/kubernetes/role/" },
-  { name: "JWT / OIDC", kind: "auth", path: "auth/jwt/", probe: "auth/jwt/role/" },
-  { name: "TLS certificates", kind: "auth", path: "auth/cert/", probe: "auth/cert/certs/" },
-  { name: "LDAP", kind: "auth", path: "auth/ldap/", probe: "auth/ldap/groups/" },
+  { name: "Username & password", kind: "auth", path: "auth/userpass/", probe: "auth/userpass/users/", open: "#/access/userpass" },
+  { name: "AppRole", kind: "auth", path: "auth/approle/", probe: "auth/approle/role/", open: "#/access/approle" },
+  { name: "Kubernetes", kind: "auth", path: "auth/kubernetes/", probe: "auth/kubernetes/role/", open: "#/access/kubernetes" },
+  { name: "JWT / OIDC", kind: "auth", path: "auth/jwt/", probe: "auth/jwt/role/", open: "#/access/jwt" },
+  { name: "TLS certificates", kind: "auth", path: "auth/cert/", probe: "auth/cert/certs/", open: "#/access/cert" },
+  { name: "LDAP", kind: "auth", path: "auth/ldap/", probe: "auth/ldap/groups/", open: "#/access/ldap" },
 ];
 
 function capTags(caps) {
@@ -767,8 +770,18 @@ function kvRoute(path) {
   }
   kvCrumbs(p);
   $("kv-path").value = "";
+  kvCreateVisibility(p === "" || p.endsWith("/") ? p : parentOf(p));
   if (p === "" || p.endsWith("/")) { kvFolderNow = p; kvFolder(p); }
   else { kvFolderNow = parentOf(p); kvSecret(p); }
+}
+
+// kvCreateVisibility shows Create secret only where the token may write.
+async function kvCreateVisibility(folder) {
+  const g = gen;
+  const probe = "secret/data/" + folder + "new-secret";
+  const caps = await can([probe]);
+  if (stale(g)) return;
+  $("kv-new").hidden = !allows(capsOf(caps, probe), "create", "update");
 }
 
 function goKv(p) {
@@ -781,11 +794,13 @@ async function kvFolder(p) {
   $("kv-title").textContent = p ? p : "Key/value";
   const out = $("kv-out");
   pageState(out, "loading", "Loading " + (p || "secret/") + "…");
-  const r = await api("LIST", KV_META(p));
+  const probe = "secret/data/" + p + "new-secret";
+  const [r, caps] = await Promise.all([api("LIST", KV_META(p)), can([probe])]);
   if (stale(g)) return;
+  const canCreate = allows(capsOf(caps, probe), "create", "update");
   const createBtn = () => actionButton("Create secret", "", () => openEditor(p, null));
   if (r.status === 404 || (r.ok && !((r.body && r.body.data && r.body.data.keys) || []).length)) {
-    pageState(out, "empty", p ? "Nothing under " + p + "." : "No secrets yet.", [createBtn()]);
+    pageState(out, "empty", p ? "Nothing under " + p + "." : "No secrets yet.", canCreate ? [createBtn()] : []);
     return;
   }
   if (!r.ok) { errorState(out, r, "secret/metadata/" + p); return; }
@@ -826,7 +841,10 @@ async function kvSecret(p, version) {
   $("kv-title").textContent = p;
   const out = $("kv-out");
   pageState(out, "loading", "Loading " + p + "…");
-  const r = await api("GET", KV_DATA(p) + (version ? "?version=" + version : ""));
+  const [r, caps] = await Promise.all([
+    api("GET", KV_DATA(p) + (version ? "?version=" + version : "")),
+    can(["secret/data/" + p, "secret/delete/" + p]),
+  ]);
   if (stale(g)) return;
   if (!r.ok) {
     if (r.status === 404) {
@@ -856,8 +874,11 @@ async function kvSecret(p, version) {
     (version ? "viewing version " + md.version : "version " + md.version) + (md.created_time ? " · created " + md.created_time : "")));
   const acts = el("div", "kv-actions");
   if (version) acts.appendChild(actionButton("Back to latest", "ghost small", () => kvSecret(p)));
-  acts.appendChild(actionButton("New version", "small", () => openEditor(p, data)));
+  if (allows(capsOf(caps, "secret/data/" + p), "create", "update")) {
+    acts.appendChild(actionButton("New version", "small", () => openEditor(p, data)));
+  }
   const del = actionButton("Delete", "btn-danger small", null);
+  del.hidden = !allows(capsOf(caps, "secret/delete/" + p), "update");
   del.addEventListener("click", () => confirmThen(del, "Soft-delete version " + md.version + " of " + p + "?", async () => {
     const d = await api("POST", KV_DELETE_V(p), { versions: [md.version] });
     if (!d.ok) { toast(friendlyError(d.status, d.body), "error"); return; }
@@ -953,8 +974,12 @@ function jsonView(body, data) {
 async function versionsView(body, p) {
   const g = gen;
   pageState(body, "loading", "Loading versions…");
-  const r = await api("GET", KV_META(p));
+  const [r, caps] = await Promise.all([
+    api("GET", KV_META(p)),
+    can(["secret/delete/" + p, "secret/undelete/" + p, "secret/destroy/" + p]),
+  ]);
   if (stale(g) || !body.isConnected) return;
+  const may = (verb) => allows(capsOf(caps, "secret/" + verb + "/" + p), "update");
   if (!r.ok) { errorState(body, r, "secret/metadata/" + p); return; }
   const md = (r.body && r.body.data) || {};
   const versions = md.versions || {};
@@ -978,9 +1003,9 @@ async function versionsView(body, p) {
     const tr = el("tr");
     const acts = el("td", "actions");
     if (!v.destroyed && !v.deleted) acts.appendChild(actionButton("View", "ghost small", () => kvSecret(p, n)));
-    if (!v.destroyed && !v.deleted) acts.appendChild(actionButton("Delete", "btn-danger small", () => op(KV_DELETE_V(p), n, "Deleted")));
-    if (v.deleted && !v.destroyed) acts.appendChild(actionButton("Undelete", "ghost small", () => op(KV_UNDELETE(p), n, "Restored")));
-    if (!v.destroyed) {
+    if (!v.destroyed && !v.deleted && may("delete")) acts.appendChild(actionButton("Delete", "btn-danger small", () => op(KV_DELETE_V(p), n, "Deleted")));
+    if (v.deleted && !v.destroyed && may("undelete")) acts.appendChild(actionButton("Undelete", "ghost small", () => op(KV_UNDELETE(p), n, "Restored")));
+    if (!v.destroyed && may("destroy")) {
       const d = actionButton("Destroy", "btn-danger small", null);
       d.addEventListener("click", () => confirmThen(d, "Destroy v" + n + " of " + p + " permanently?",
         () => op(KV_DESTROY(p), n, "Destroyed"), "destroy"));
@@ -1108,8 +1133,9 @@ async function polList() {
   $("pol-title").textContent = "Policies";
   const out = $("pol-out");
   pageState(out, "loading", "Loading policies…");
-  const r = await api("LIST", POL_LIST);
+  const [r, caps] = await Promise.all([api("LIST", POL_LIST), can(["sys/policies/acl/new-policy"])]);
   if (stale(g)) return;
+  $("pol-new").hidden = !allows(capsOf(caps, "sys/policies/acl/new-policy"), "create", "update");
   if (!r.ok) { errorState(out, r, "sys/policies/acl"); return; }
   const keys = (r.body && r.body.data && r.body.data.keys) || [];
   if (!keys.length) { pageState(out, "empty", "No policies defined."); return; }
@@ -1133,16 +1159,18 @@ async function polRead(name) {
   $("pol-title").textContent = name;
   const out = $("pol-out");
   pageState(out, "loading", "Loading " + name + "…");
-  const r = await api("GET", POL(name));
+  const [r, caps] = await Promise.all([api("GET", POL(name)), can(["sys/policies/acl/" + name])]);
   if (stale(g)) return;
+  const pc = capsOf(caps, "sys/policies/acl/" + name);
+  $("pol-new").hidden = true;
   if (!r.ok) { errorState(out, r, "sys/policies/acl/" + name); return; }
   const doc = r.body && r.body.data && r.body.data.policy;
   // The policy arrives as text (as in Vault); pretty-print it when it is JSON.
   let text = typeof doc === "string" ? doc : JSON.stringify(doc, null, 2);
   try { text = JSON.stringify(JSON.parse(text), null, 2); } catch (_) { /* HCL: show as-is */ }
   const acts = el("div", "kv-actions");
-  acts.appendChild(actionButton("Edit", "small", () => openPolEditor(name, text)));
-  if (name !== "root" && name !== "default") {
+  if (allows(pc, "update")) acts.appendChild(actionButton("Edit", "small", () => openPolEditor(name, text)));
+  if (name !== "root" && name !== "default" && allows(pc, "delete")) {
     const del = actionButton("Delete", "btn-danger small", null);
     del.addEventListener("click", () => confirmThen(del, "Delete policy " + name + "?", () => polDelete(name)));
     acts.appendChild(del);
@@ -1194,6 +1222,341 @@ async function capCheck() {
   if (!r.ok) { errorState(out, r, "sys/capabilities-self"); return; }
   const caps = (r.body && r.body.data && r.body.data[p]) || [];
   out.replaceChildren(el("div", "metaline", "on " + p), capTags(caps));
+}
+
+// ---- capabilities: hide what the token cannot do ----
+// can asks sys/capabilities-self what the token may do on each path. On any
+// failure it answers null and callers show the controls: hiding is a
+// convenience, the server still enforces every call.
+async function can(paths) {
+  const r = await api("POST", "/v1/sys/capabilities-self", { paths });
+  return r.ok && r.body && r.body.data ? r.body.data : null;
+}
+// allows reports whether caps (one path's list, or undefined when unknown)
+// grants any of want.
+const allows = (caps, ...want) => !caps || caps.includes("root") || want.some((w) => caps.includes(w));
+const capsOf = (map, path) => (map ? map[path] || ["deny"] : undefined);
+
+// ---- Access: users and roles of each auth method ----
+// One description per method drives a shared list, detail and editor.
+// Field types: list (comma-separated), text, duration, password (write-only),
+// pem (textarea), claims (key=value lines → object).
+const TOKEN_FIELDS = [
+  { k: "token_policies", label: "Policies", type: "list", help: "Comma-separated. Never root." },
+  { k: "token_ttl", label: "Token TTL", type: "duration", help: "e.g. 1h; empty for the default" },
+  { k: "token_max_ttl", label: "Token max TTL", type: "duration" },
+];
+const ACCESS = {
+  userpass: {
+    title: "Username & password", noun: "user", base: "auth/userpass/users",
+    about: "People who sign in with a username and password.",
+    fields: [{ k: "password", label: "Password", type: "password", createOnly: true,
+      help: "Required for a new user. On an existing user, leave empty to keep it." }, ...TOKEN_FIELDS],
+    required: ["password", "token_policies"],
+  },
+  approle: {
+    title: "AppRole", noun: "role", base: "auth/approle/role",
+    about: "Machines that sign in with a role ID and a secret ID.",
+    fields: [...TOKEN_FIELDS, { k: "secret_id_ttl", label: "Secret ID TTL", type: "duration" }],
+    required: ["token_policies"],
+  },
+  kubernetes: {
+    title: "Kubernetes", noun: "role", base: "auth/kubernetes/role",
+    about: "Pods that sign in with their service account token.",
+    fields: [
+      { k: "bound_service_account_names", label: "Service accounts", type: "list" },
+      { k: "bound_service_account_namespaces", label: "Namespaces", type: "list" },
+      ...TOKEN_FIELDS],
+    required: ["bound_service_account_names", "bound_service_account_namespaces", "token_policies"],
+  },
+  jwt: {
+    title: "JWT / OIDC", noun: "role", base: "auth/jwt/role",
+    about: "Workloads that sign in with a JWT from a trusted issuer.",
+    fields: [
+      { k: "bound_audiences", label: "Audiences", type: "list" },
+      { k: "bound_claims", label: "Required claims", type: "claims", help: "One key=value per line" },
+      ...TOKEN_FIELDS],
+    required: ["token_policies"],
+  },
+  cert: {
+    title: "TLS certificates", noun: "certificate role", base: "auth/cert/certs",
+    about: "Clients that sign in with a TLS client certificate.",
+    fields: [
+      { k: "certificate", label: "Trusted CA or certificate (PEM)", type: "pem" },
+      { k: "allowed_common_names", label: "Allowed common names", type: "list" },
+      ...TOKEN_FIELDS],
+    required: ["certificate", "token_policies"],
+  },
+  ldap: {
+    title: "LDAP groups", noun: "group", base: "auth/ldap/groups",
+    about: "Policies for members of an LDAP group.",
+    fields: [{ k: "policies", label: "Policies", type: "list" }],
+    required: ["policies"],
+  },
+};
+// found tells a real entry from a miss. Most methods answer 404 for a missing
+// name; LDAP answers 200 with null policies, so its entry is real only with them.
+function found(method, r) {
+  if (r.status === 404) return false;
+  if (!r.ok) return null;
+  const d = r.body && r.body.data;
+  return method === "ldap" ? !!(d && Array.isArray(d.policies)) : true;
+}
+const ACCESS_ORDER = ["userpass", "approle", "kubernetes", "jwt", "cert", "ldap"];
+const accessHref = (m, name) => "#/access/" + m + (name ? "/" + encodeURIComponent(name) : "");
+const ACCESS_URL = (m, name) => "/v1/" + ACCESS[m].base + (name ? "/" + encodeURIComponent(name) : "");
+
+function fieldText(f, v) {
+  if (v == null) return "";
+  if (f.type === "list") return Array.isArray(v) ? v.join(", ") : String(v);
+  if (f.type === "duration") return v === "0s" ? "" : String(v);
+  if (f.type === "claims") return Object.entries(v || {}).map(([a, b]) => a + "=" + b).join("\n");
+  return typeof v === "string" ? v : JSON.stringify(v);
+}
+
+let accessNow = { method: "", name: "" };
+
+function accessRoute(method, name) {
+  closeAccessEditor();
+  $("access-new").hidden = true;
+  if (!method) { accessIndex(); return; }
+  // Own keys only: "#/access/constructor" must not reach Object.prototype.
+  const m = Object.hasOwn(ACCESS, method) ? ACCESS[method] : null;
+  if (!m || (name && badName(name))) {
+    setCrumbs([["Access", "#/access"], ["Not found", location.hash]]);
+    $("access-title").textContent = "Access";
+    pageState($("access-out"), "error", m ? BAD_NAME : "There is no auth method " + method + " here.");
+    return;
+  }
+  accessNow = { method, name };
+  const crumbs = [["Access", "#/access"], [m.title, accessHref(method)]];
+  if (name) crumbs.push([name, accessHref(method, name)]);
+  setCrumbs(crumbs);
+  if (name) accessItem(method, name); else accessList(method);
+}
+
+async function accessIndex() {
+  const g = gen;
+  setCrumbs([["Access", "#/access"]]);
+  $("access-title").textContent = "Access";
+  const out = $("access-out");
+  pageState(out, "loading", "Loading auth methods…");
+  const counts = await Promise.all(ACCESS_ORDER.map((m) => api("LIST", ACCESS_URL(m))));
+  if (stale(g)) return;
+  const wrap = el("div", "table-wrap");
+  const table = el("table", "grid-table");
+  const thead = el("thead");
+  const hr = el("tr");
+  for (const h of ["Method", "What it is for", "Entries"]) hr.appendChild(el("th", null, h));
+  thead.appendChild(hr);
+  const tbody = el("tbody");
+  ACCESS_ORDER.forEach((m, i) => {
+    const r = counts[i];
+    // Only a successful list is a count; a 404 means the method is not there.
+    const n = r.ok ? ((r.body && r.body.data && r.body.data.keys) || []).length : null;
+    const tr = el("tr");
+    const td = el("td");
+    td.appendChild(link(ACCESS[m].title, accessHref(m), "entry"));
+    tr.append(td, el("td", null, ACCESS[m].about),
+      el("td", null, n == null ? (r.status === 403 ? "not visible" : "—") : String(n)));
+    tbody.appendChild(tr);
+  });
+  table.append(thead, tbody);
+  wrap.appendChild(table);
+  out.replaceChildren(wrap);
+}
+
+async function accessList(method) {
+  const g = gen;
+  const m = ACCESS[method];
+  $("access-title").textContent = m.title;
+  const out = $("access-out");
+  pageState(out, "loading", "Loading…");
+  const [r, caps] = await Promise.all([api("LIST", ACCESS_URL(method)), can([m.base + "/new-entry"])]);
+  if (stale(g)) return;
+  $("access-new").hidden = !allows(capsOf(caps, m.base + "/new-entry"), "create", "update");
+  $("access-new").textContent = "Create " + m.noun;
+  if (r.status === 404 || (r.ok && !((r.body && r.body.data && r.body.data.keys) || []).length)) {
+    pageState(out, "empty", "No " + m.noun + "s yet. " + m.about);
+    return;
+  }
+  if (!r.ok) { errorState(out, r, m.base); return; }
+  const keys = r.body.data.keys.slice().sort();
+  const wrap = el("div", "table-wrap");
+  const table = el("table", "grid-table");
+  const tbody = el("tbody");
+  for (const k of keys) {
+    const tr = el("tr");
+    const td = el("td");
+    td.appendChild(link(k, accessHref(method, k), "entry"));
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  out.replaceChildren(el("div", "metaline", keys.length + " " + m.noun + (keys.length === 1 ? "" : "s") + " · " + m.about), wrap);
+}
+
+async function accessItem(method, name) {
+  const g = gen;
+  const m = ACCESS[method];
+  $("access-title").textContent = name;
+  const out = $("access-out");
+  pageState(out, "loading", "Loading " + name + "…");
+  const path = m.base + "/" + name;
+  const extra = method === "approle" ? [path + "/role-id", path + "/secret-id"] : [];
+  const [r, caps] = await Promise.all([api("GET", ACCESS_URL(method, name)), can([path, ...extra])]);
+  if (stale(g)) return;
+  if (found(method, r) === false) { pageState(out, "empty", "There is no " + m.noun + " named " + name + "."); return; }
+  if (!r.ok) { errorState(out, r, path); return; }
+  const d = (r.body && r.body.data) || {};
+  const c = capsOf(caps, path);
+  const acts = el("div", "kv-actions");
+  if (allows(c, "update")) acts.appendChild(actionButton("Edit", "small", () => openAccessEditor(method, name, d)));
+  if (allows(c, "delete")) {
+    const del = actionButton("Delete", "btn-danger small", null);
+    del.addEventListener("click", () => confirmThen(del, "Delete " + m.noun + " " + name + "?", async () => {
+      const x = await api("DELETE", ACCESS_URL(method, name));
+      if (!x.ok) { toast(friendlyError(x.status, x.body), "error"); return; }
+      toast("Deleted " + name + ".");
+      location.hash = accessHref(method);
+    }));
+    acts.appendChild(del);
+  }
+  const table = el("table", "kv-table");
+  kvRows(table, m.fields.filter((f) => f.type !== "password").map((f) => [f.label, fieldText(f, d[f.k]) || "—"]));
+  out.replaceChildren(acts, table);
+  if (method === "approle") {
+    approleCredentials(out, name, allows(capsOf(caps, extra[0]), "read"), allows(capsOf(caps, extra[1]), "update", "create"));
+  }
+}
+
+// approleCredentials shows the role ID and mints a secret ID on request (shown once).
+// Each button shows only when the token may use it.
+function approleCredentials(out, name, canRoleID, canSecretID) {
+  if (!canRoleID && !canSecretID) return;
+  const panel = el("section", "panel");
+  panel.appendChild(el("h2", null, "Credentials"));
+  const body = el("div", "view");
+  const acts = el("div", "kv-actions");
+  if (canRoleID) acts.appendChild(actionButton("Show role ID", "ghost small", async () => {
+    const r = await api("GET", ACCESS_URL("approle", name) + "/role-id");
+    if (!r.ok) { toast(friendlyError(r.status, r.body), "error"); return; }
+    const id = (r.body && r.body.data && r.body.data.role_id) || "";
+    const row = el("div", "keyrow");
+    row.append(el("span", "n", "role"), el("code", null, id), actionButton("Copy", "ghost small", () => copy(id, "Role ID")));
+    body.replaceChildren(row);
+  }));
+  const gen2 = actionButton("Generate secret ID", "small", null);
+  gen2.addEventListener("click", () => confirmThen(gen2, "Issue a new secret ID for " + name + "?", async () => {
+    const r = await api("POST", ACCESS_URL("approle", name) + "/secret-id", {});
+    if (!r.ok) { toast(friendlyError(r.status, r.body), "error"); return; }
+    const sid = (r.body && r.body.data && r.body.data.secret_id) || "";
+    const row = el("div", "keyrow");
+    row.append(el("span", "n", "secret"), el("code", null, sid), actionButton("Copy", "ghost small", () => copy(sid, "Secret ID")));
+    body.replaceChildren(row, el("div", "warn", "Copy it now — it is shown once."));
+  }));
+  if (canSecretID) acts.appendChild(gen2);
+  panel.append(el("p", "hint", "A machine signs in with both. The secret ID is shown once."), acts, body);
+  out.appendChild(panel);
+}
+
+function openAccessEditor(method, name, existing) {
+  const m = ACCESS[method];
+  const ed = $("access-editor");
+  ed.dataset.method = method;
+  ed.dataset.existing = existing ? "1" : "";
+  $("access-editor-title").textContent = existing ? "Edit " + m.noun + " " + name : "New " + m.noun;
+  $("access-name").value = name || "";
+  $("access-name").readOnly = !!existing;
+  const box = $("access-fields");
+  box.replaceChildren();
+  for (const f of m.fields) {
+    const wrap = el("div", "field");
+    const id = "af-" + f.k;
+    const lab = el("label", null, f.label + (m.required.includes(f.k) && !(existing && f.createOnly) ? " *" : ""));
+    lab.htmlFor = id;
+    let input;
+    if (f.type === "pem" || f.type === "claims") {
+      input = el("textarea");
+      input.rows = f.type === "pem" ? 6 : 3;
+    } else {
+      input = el("input");
+      input.type = f.type === "password" ? "password" : "text";
+      if (f.type === "password") input.autocomplete = "new-password";
+    }
+    input.id = id;
+    input.dataset.k = f.k;
+    input.spellcheck = false;
+    if (existing && f.type !== "password") input.value = fieldText(f, existing[f.k]);
+    wrap.append(lab, input);
+    if (f.help) wrap.appendChild(el("div", "kv-metaline", f.help));
+    box.appendChild(wrap);
+  }
+  ed.hidden = false;
+  ed.scrollIntoView({ block: "nearest" });
+  (existing ? box.querySelector("input, textarea") : $("access-name")).focus();
+}
+
+function closeAccessEditor() {
+  $("access-editor").hidden = true;
+  $("access-fields").replaceChildren(); // drops any typed password
+}
+
+async function saveAccess() {
+  const ed = $("access-editor");
+  const method = ed.dataset.method;
+  const m = ACCESS[method];
+  const existing = ed.dataset.existing === "1";
+  const name = $("access-name").value.trim();
+  if (!name || badName(name)) { toast(name ? BAD_NAME : "Enter a name.", "error"); $("access-name").focus(); return; }
+  const body = {};
+  for (const input of $("access-fields").querySelectorAll("[data-k]")) {
+    const f = m.fields.find((x) => x.k === input.dataset.k);
+    const raw = input.value.trim();
+    if (!raw) {
+      if (m.required.includes(f.k) && !(existing && (f.createOnly || f.type === "password"))) {
+        toast(f.label + " is required.", "error"); input.focus(); return;
+      }
+      // An emptied list or duration on an existing entry clears it; a new
+      // entry simply leaves it out.
+      if (existing && f.type !== "password" && f.type !== "pem") body[f.k] = f.type === "list" ? [] : f.type === "claims" ? {} : "";
+      continue;
+    }
+    if (f.type === "list") body[f.k] = raw.split(",").map((s) => s.trim()).filter(Boolean);
+    else if (f.type === "claims") {
+      const obj = {};
+      for (const line of raw.split("\n")) {
+        const i = line.indexOf("=");
+        if (i < 1) { toast("Each claim is key=value.", "error"); input.focus(); return; }
+        obj[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+      }
+      body[f.k] = obj;
+    } else body[f.k] = f.type === "password" ? input.value : raw;
+  }
+  // The server's write is an upsert: refuse to "create" over an existing entry,
+  // which for userpass would silently reset someone's password.
+  if (!existing) {
+    // Only a 404 proves the name is free; anything else (a 403 for a token that
+    // may write but not read, an outage) could hide an entry, so stop.
+    const prior = await api("GET", ACCESS_URL(method, name));
+    const there = found(method, prior);
+    if (there) {
+      toast("A " + m.noun + " named " + name + " already exists. Open it to edit.", "error");
+      $("access-name").focus();
+      return;
+    }
+    if (there === null) {
+      toast("Could not check whether " + name + " exists (" + friendlyError(prior.status, prior.body) + "). Nothing was saved.", "error");
+      return;
+    }
+  }
+  const r = await api("POST", ACCESS_URL(method, name), body);
+  if (!r.ok) { toast(friendlyError(r.status, r.body), "error"); return; }
+  closeAccessEditor();
+  toast("Saved " + name + ".");
+  const href = accessHref(method, name);
+  if (location.hash === href) accessItem(method, name); else location.hash = href;
 }
 
 // ---- create token ----
@@ -1375,6 +1738,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   onSubmit("kv-editor", saveSecret);
 
   // Policies
+  $("access-new").addEventListener("click", () => openAccessEditor(accessNow.method, "", null));
+  $("access-cancel").addEventListener("click", closeAccessEditor);
+  onSubmit("access-editor", saveAccess);
   $("pol-new").addEventListener("click", () => openPolEditor("", ""));
   $("pol-cancel").addEventListener("click", closePolEditor);
   onSubmit("pol-editor", polSave);

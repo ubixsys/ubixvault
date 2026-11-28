@@ -20,6 +20,7 @@
     <a href="#/kv/" data-nav="kv">Key/value</a>
     <a href="#/pki" data-nav="pki">PKI</a>
     <div class="nav-group">Access</div>
+    <a href="#/access" data-nav="access">Users &amp; roles</a>
     <a href="#/tokens" data-nav="tokens">Tokens</a>
     <a href="#/policies" data-nav="policies">Policies</a>
   </nav>
@@ -170,6 +171,29 @@
       </form>
 
       <div id="kv-out" class="out" aria-live="polite"></div>
+    </section>
+
+    <!-- Access: users and roles of each auth method -->
+    <section class="page" id="page-access" hidden>
+      <div class="page-head">
+        <h1 class="page-title" id="access-title">Access</h1>
+        <div class="row tight">
+          <button type="button" id="access-new" hidden>Create</button>
+        </div>
+      </div>
+      <form class="editor" id="access-editor" hidden>
+        <div class="editor-head"><span id="access-editor-title">New</span></div>
+        <div class="field">
+          <label for="access-name">Name</label>
+          <input type="text" id="access-name" spellcheck="false" autocomplete="off">
+        </div>
+        <div id="access-fields"></div>
+        <div class="row editor-actions">
+          <button type="submit">Save</button>
+          <button type="button" id="access-cancel" class="ghost">Cancel</button>
+        </div>
+      </form>
+      <div id="access-out" class="out" aria-live="polite"></div>
     </section>
 
     <!-- Policies -->
