@@ -1344,8 +1344,8 @@ async function accessIndex() {
   const tbody = el("tbody");
   ACCESS_ORDER.forEach((m, i) => {
     const r = counts[i];
-    const n = r.ok ? ((r.body && r.body.data && r.body.data.keys) || []).length
-      : r.status === 404 ? 0 : null;
+    // Only a successful list is a count; a 404 means the method is not there.
+    const n = r.ok ? ((r.body && r.body.data && r.body.data.keys) || []).length : null;
     const tr = el("tr");
     const td = el("td");
     td.appendChild(link(ACCESS[m].title, accessHref(m), "entry"));
@@ -1525,6 +1525,16 @@ async function saveAccess() {
       }
       body[f.k] = obj;
     } else body[f.k] = f.type === "password" ? input.value : raw;
+  }
+  // The server's write is an upsert: refuse to "create" over an existing entry,
+  // which for userpass would silently reset someone's password.
+  if (!existing) {
+    const prior = await api("GET", ACCESS_URL(method, name));
+    if (prior.ok) {
+      toast("A " + m.noun + " named " + name + " already exists. Open it to edit.", "error");
+      $("access-name").focus();
+      return;
+    }
   }
   const r = await api("POST", ACCESS_URL(method, name), body);
   if (!r.ok) { toast(friendlyError(r.status, r.body), "error"); return; }

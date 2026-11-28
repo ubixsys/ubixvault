@@ -257,6 +257,18 @@ await sleep(1200);
 check("access: edit without a password keeps the user", (await inner("#access-out")).includes("default"), await inner("#access-out"));
 const bobLogin = await fetch(BASE + "/v1/auth/userpass/login/bob", { method: "POST", body: JSON.stringify({ password: "pw-bob-e2e" }) });
 check("access: the password still works after the edit", bobLogin.status === 200, String(bobLogin.status));
+await go("#/access/userpass");
+await js(`document.getElementById("access-new").click(); return true;`);
+await settle();
+await setVal("access-name", "bob");
+await setVal("af-password", "pw-overwritten");
+await setVal("af-token_policies", "readers");
+await submit("access-editor");
+await sleep(1200);
+const dupToast = await inner("#toast");
+const bobAgain = await fetch(BASE + "/v1/auth/userpass/login/bob", { method: "POST", body: JSON.stringify({ password: "pw-bob-e2e" }) });
+check("access: create refuses an existing name and keeps its password", dupToast.includes("already exists") && bobAgain.status === 200, dupToast + " " + bobAgain.status);
+await js(`document.getElementById("access-cancel").click(); return true;`);
 await shot("08b-access-user");
 
 await go("#/access/approle");
