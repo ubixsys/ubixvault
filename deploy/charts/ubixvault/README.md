@@ -229,6 +229,11 @@ Things to know:
 | `persistence.enabled` / `.size` | `true` / `1Gi` | Encrypted data volume. |
 | `autoUnseal.enabled` | `true` | Wrap the master key with a KEK for self-unseal. |
 | `autoUnseal.existingSecret` | `""` | Secret holding the KEK (key `auto-unseal-key`). |
+| `sealTransit.enabled` | `false` | Unseal through another Vault-compatible Transit engine instead. |
+| `sealExternal.enabled` | `false` | Unseal through a command that calls your KMS or HSM (see below). |
+| `sealExternal.command` / `.args` / `.timeout` | `""` / `[]` / `30s` | Absolute path in the container, arguments before `wrap`/`unwrap`, per-call timeout. |
+| `sealExternal.helper.image` / `.command` / `.mountPath` | `""` / `[]` / `/seal/bin` | Init container that copies the command into a shared volume. |
+| `sealExternal.volumes` / `.volumeMounts` | `[]` / `[]` | Extra volumes for the vault container, e.g. provider credentials. |
 | `tls.enabled` | `true` | Serve HTTPS. |
 | `tls.existingSecret` | `""` | `kubernetes.io/tls` Secret to mount. |
 | `tls.certManager.enabled` | `false` | Issue the cert via cert-manager instead. |
@@ -242,6 +247,30 @@ Things to know:
 | `ingress.whitelistSourceRange` | `""` | Optional CIDR allow-list to restrict access. |
 
 See [`values.yaml`](values.yaml) for the full list.
+
+## Unsealing through your KMS or HSM (`sealExternal`)
+
+The vault runs `<command> [args...] wrap` and `... unwrap` with the key on stdin and
+reads the result from stdout; a failed or timed-out call leaves it sealed. The image
+is distroless, so ship the command as a static binary in a helper image; the init
+container copies it into a shared volume before the vault starts. Exactly one of
+`autoUnseal`, `sealTransit` and `sealExternal` may be on.
+
+```sh
+helm install ubixvault ./deploy/charts/ubixvault -n $NS \
+  --set tls.existingSecret=$TLS \
+  --set autoUnseal.enabled=false \
+  --set sealExternal.enabled=true \
+  --set sealExternal.command=/seal/bin/kms-seal \
+  --set 'sealExternal.args={--key-id,alias/ubixvault}' \
+  --set sealExternal.helper.image=registry.example/kms-seal:1.0.0 \
+  --set 'sealExternal.helper.command={cp,/kms-seal,/seal/bin/}'
+```
+
+Provider credentials come from `extraEnv` (for example `valueFrom.secretKeyRef`) or
+from a Secret mounted with `sealExternal.volumes` and `sealExternal.volumeMounts`.
+Prefer workload identity (IRSA, GKE Workload Identity, Azure Workload Identity)
+through `serviceAccount` annotations so no long-lived key is stored.
 
 ## Backups
 

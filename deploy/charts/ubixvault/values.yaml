@@ -165,6 +165,29 @@ sealTransit:
   secretKey: token
   tlsSkipVerify: false
 
+# --- External-command seal (alternative to autoUnseal and sealTransit) -----
+# Wrap the master key by running a command that talks to your cloud KMS or HSM
+# (ADR D-015): `<command> [args...] wrap|unwrap`, key on stdin, result on stdout.
+# Mutually exclusive with autoUnseal and sealTransit; set autoUnseal.enabled=false.
+# The image is distroless, so the command must be a static binary brought in by
+# the helper init container, which copies it into a shared emptyDir at
+# helper.mountPath. Provider credentials come from extraEnv or a mounted Secret.
+sealExternal:
+  enabled: false
+  command: ""              # absolute path in the container, e.g. /seal/bin/kms-seal
+  args: []                 # passed before wrap/unwrap, e.g. ["--key-id", "alias/vault"]
+  timeout: 30s             # per wrap/unwrap call
+  helper:
+    image: ""              # image that holds the command; empty = bring it in another way
+    imagePullPolicy: IfNotPresent
+    # Copies the command into mountPath; the image must have cp (or set your own).
+    command: []            # e.g. ["cp", "/usr/local/bin/kms-seal", "/seal/bin/"]
+    mountPath: /seal/bin
+  # Extra volumes and mounts for the vault container, e.g. a Secret holding
+  # provider credentials or a CA bundle for the KMS endpoint.
+  volumes: []
+  volumeMounts: []
+
 # --- TLS -------------------------------------------------------------------
 # Serve HTTPS. Without TLS the server refuses to serve on a non-loopback address
 # unless devNoTLS is set (INSECURE — trusted networks / testing only).

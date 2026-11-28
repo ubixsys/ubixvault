@@ -18,8 +18,16 @@
 {{- if and .Values.tls.enabled (not .Values.tls.certManager.enabled) (not .Values.tls.existingSecret) -}}
 {{- fail "tls.enabled is true: set tls.existingSecret (a kubernetes.io/tls Secret) or enable tls.certManager" -}}
 {{- end -}}
-{{- if and .Values.autoUnseal.enabled .Values.sealTransit.enabled -}}
-{{- fail "set either autoUnseal.enabled or sealTransit.enabled, not both" -}}
+{{- if gt (len (compact (list (ternary "a" "" .Values.autoUnseal.enabled) (ternary "t" "" .Values.sealTransit.enabled) (ternary "e" "" .Values.sealExternal.enabled)))) 1 -}}
+{{- fail "enable at most one of autoUnseal, sealTransit and sealExternal" -}}
+{{- end -}}
+{{- if .Values.sealExternal.enabled -}}
+{{- if not (hasPrefix "/" .Values.sealExternal.command) -}}
+{{- fail "sealExternal.enabled requires sealExternal.command, an absolute path in the container" -}}
+{{- end -}}
+{{- if and .Values.sealExternal.helper.image (not .Values.sealExternal.helper.command) -}}
+{{- fail "sealExternal.helper.image is set: set sealExternal.helper.command to copy the command into sealExternal.helper.mountPath" -}}
+{{- end -}}
 {{- end -}}
 {{- if and .Values.autoUnseal.enabled (not .Values.sealTransit.enabled) (not .Values.autoUnseal.existingSecret) (not .Values.autoUnseal.create) -}}
 {{- fail "autoUnseal.enabled is true: set autoUnseal.existingSecret, or autoUnseal.create with autoUnseal.key" -}}
@@ -65,6 +73,19 @@ spec:
       {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if and .Values.sealExternal.enabled .Values.sealExternal.helper.image }}
+      initContainers:
+        - name: seal-helper
+          image: {{ .Values.sealExternal.helper.image | quote }}
+          imagePullPolicy: {{ .Values.sealExternal.helper.imagePullPolicy }}
+          command:
+            {{- toYaml .Values.sealExternal.helper.command | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: seal-helper
+              mountPath: {{ .Values.sealExternal.helper.mountPath }}
+      {{- end }}
       containers:
         - name: ubixvault
           image: {{ include "ubixvault.image" . | quote }}
@@ -116,6 +137,16 @@ spec:
             {{- if .Values.sealTransit.tlsSkipVerify }}
             - -seal-transit-tls-skip-verify
             {{- end }}
+            {{- end }}
+            {{- if .Values.sealExternal.enabled }}
+            - -seal-external-command
+            - {{ .Values.sealExternal.command | quote }}
+            {{- range .Values.sealExternal.args }}
+            - -seal-external-arg
+            - {{ . | quote }}
+            {{- end }}
+            - -seal-external-timeout
+            - {{ .Values.sealExternal.timeout | quote }}
             {{- end }}
             {{- if $ha }}
             - -ha
@@ -271,7 +302,26 @@ spec:
             - name: audit
               mountPath: {{ .Values.audit.persistence.mountPath }}
             {{- end }}
+            {{- if .Values.sealExternal.enabled }}
+            {{- if .Values.sealExternal.helper.image }}
+            - name: seal-helper
+              mountPath: {{ .Values.sealExternal.helper.mountPath }}
+              readOnly: true
+            {{- end }}
+            {{- with .Values.sealExternal.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- end }}
       volumes:
+        {{- if .Values.sealExternal.enabled }}
+        {{- if .Values.sealExternal.helper.image }}
+        - name: seal-helper
+          emptyDir: {}
+        {{- end }}
+        {{- with .Values.sealExternal.volumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
         {{- if $raft }}
         # One key per joining pod, named after the pod (<fullname>-1, -2, ...),
         # each a single-use token from `operator raft join-token`. Optional so

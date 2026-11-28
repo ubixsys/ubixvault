@@ -95,6 +95,9 @@ helm-lint: ## Lint the Helm chart: single-replica, MySQL HA and Raft
 		--set storage.type=mysql --set storage.mysql.dsnSecret=dsn --set ha.enabled=true --set replicaCount=3
 	helm lint $(CHART) --set tls.existingSecret=tls --set autoUnseal.existingSecret=kek \
 		--set storage.type=raft --set replicaCount=3 --set storage.networkPolicy.enabled=true
+	helm lint $(CHART) --set tls.existingSecret=tls --set autoUnseal.enabled=false \
+		--set sealExternal.enabled=true --set sealExternal.command=/seal/bin/kms-seal \
+		--set sealExternal.helper.image=example/kms-seal:1 --set 'sealExternal.helper.command={cp,/kms-seal,/seal/bin/}'
 
 .PHONY: helm-template
 helm-template: ## Render the Helm chart to stdout
