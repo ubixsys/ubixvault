@@ -6,6 +6,14 @@ All notable changes to uBixVault are documented here. The format is based on
 
 ## [Unreleased]
 
+## [1.8.0] — 2026-11-27
+
+> The web console becomes an application: a sidebar, a dashboard, a key/value
+> browser with masked values, users and roles for every auth method, and
+> controls that follow the token's permissions. Light and dark themes follow
+> the system. The Helm chart can unseal through an external KMS or HSM. No
+> storage migration and no API changes beyond one new read-only endpoint.
+
 ### Added
 
 - **`GET /v1/sys/internal/ui/mounts`**, as in Vault, without a token: the
@@ -19,7 +27,8 @@ All notable changes to uBixVault are documented here. The format is based on
   cloud KMS or HSM instead of a key in a cluster Secret. An optional helper
   init container copies the command into the distroless pod; `volumes` and
   `volumeMounts` carry provider credentials. The chart refuses more than one of
-  `autoUnseal`, `sealTransit` and `sealExternal`. Off by default. Chart 0.1.24.
+  `autoUnseal`, `sealTransit` and `sealExternal`. Off by default.
+- **Chart 0.1.25 (appVersion 1.8.0).**
 
 ### Changed
 
@@ -767,6 +776,7 @@ Eleventh beta: cloud-KMS / HSM auto-unseal — the last 1.0 engineering gate.
   a failing or slow command leaves the vault sealed (fail-safe). Joins the static
   KEK and transit seals behind the same interface.
 
+[1.8.0]: https://github.com/ubixsys/ubixvault/releases/tag/v1.8.0
 [1.7.0]: https://github.com/ubixsys/ubixvault/releases/tag/v1.7.0
 [1.6.0]: https://github.com/ubixsys/ubixvault/releases/tag/v1.6.0
 [1.5.0]: https://github.com/ubixsys/ubixvault/releases/tag/v1.5.0
