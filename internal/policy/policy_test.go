@@ -185,3 +185,43 @@ func TestTemplatedNoTemplatesReturnsSame(t *testing.T) {
 		t.Fatal("a policy with no templates should be returned unchanged (same pointer)")
 	}
 }
+
+func TestACLHasAccessUnder(t *testing.T) {
+	acl := func(rules ...Rule) *ACL { return NewACL(&Policy{Rules: rules}) }
+	cases := []struct {
+		name   string
+		a      *ACL
+		prefix string
+		want   bool
+	}{
+		{"rule under the mount", acl(Rule{Path: "secret/data/app/*", Capabilities: []Capability{Read}}), "secret/", true},
+		{"glob covering the mount", acl(Rule{Path: "secret/*", Capabilities: []Capability{List}}), "secret/", true},
+		{"glob covering everything", acl(Rule{Path: "*", Capabilities: []Capability{Read}}), "secret/", true},
+		{"rule in another mount", acl(Rule{Path: "transit/encrypt/a", Capabilities: []Capability{Update}}), "secret/", false},
+		{"deny only", acl(Rule{Path: "secret/data/app/*", Capabilities: []Capability{Deny}}), "secret/", false},
+		{"no rules", acl(), "secret/", false},
+		{"similar name is not the mount", acl(Rule{Path: "secrets/data/x", Capabilities: []Capability{Read}}), "secret/", false},
+		// Deny wins, as in Allows.
+		{"grant and deny in one rule", acl(Rule{Path: "secret/*", Capabilities: []Capability{Read, Deny}}), "secret/", false},
+		{"broad deny over a narrower grant", acl(
+			Rule{Path: "secret/*", Capabilities: []Capability{Deny}},
+			Rule{Path: "secret/data/app/*", Capabilities: []Capability{Read}}), "secret/", false},
+		{"exact deny of the granted path", acl(
+			Rule{Path: "secret/data/app/db", Capabilities: []Capability{Deny}},
+			Rule{Path: "secret/data/app/db", Capabilities: []Capability{Read}}), "secret/", false},
+		{"narrow deny inside a broader grant", acl(
+			Rule{Path: "secret/data/app/db", Capabilities: []Capability{Deny}},
+			Rule{Path: "secret/data/app/*", Capabilities: []Capability{Read}}), "secret/", true},
+		{"deny in another mount", acl(
+			Rule{Path: "transit/*", Capabilities: []Capability{Deny}},
+			Rule{Path: "secret/data/app/*", Capabilities: []Capability{Read}}), "secret/", true},
+		{"deny of the whole mount over a global grant", acl(
+			Rule{Path: "secret/*", Capabilities: []Capability{Deny}},
+			Rule{Path: "*", Capabilities: []Capability{Read}}), "secret/", false},
+	}
+	for _, c := range cases {
+		if got := c.a.HasAccessUnder(c.prefix); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+}
